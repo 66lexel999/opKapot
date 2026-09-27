@@ -57,7 +57,13 @@ Deleting things is serious, so several guards are built in:
 ## Download and run
 
 ### Windows (recommended)
-The **Build** GitHub Actions workflow produces two files: `opKapot-Uninstaller-Setup-x.y.z.exe` (installer) and `opKapot-Uninstaller-Portable-x.y.z.exe` (no install needed). Download them from the workflow run's **Artifacts** section. The app asks for administrator rights because uninstalling programs and cleaning Windows folders needs them.
+1. Download **[opKapot-Uninstaller-Portable-1.0.0.exe](release/opKapot-Uninstaller-Portable-1.0.0.exe)** (open the link, then click **Download raw file**). It's portable, so there's nothing to install.
+2. Double-click it. Windows SmartScreen may say *"Windows protected your PC"* because the app isn't code-signed: click **More info → Run anyway**.
+3. Click **Yes** when Windows asks for administrator permission. Uninstalling programs and cleaning Windows folders needs it.
+
+The first launch takes a few seconds while the portable exe unpacks itself. Put the exe anywhere you like (for example your Desktop) and run it from there.
+
+The **Build** GitHub Actions workflow also produces an installer (`opKapot-Uninstaller-Setup-x.y.z.exe`) and a fresh portable exe. Once Actions is enabled for the repository, download them from a workflow run's **Artifacts** section.
 
 ### Build from source
 Requires Node.js 20+.
