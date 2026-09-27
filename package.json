@@ -1,7 +1,7 @@
 {
   "name": "opkapot-uninstaller",
   "productName": "opKapot Uninstaller",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Advanced uninstaller and PC security: batch-remove programs, clean junk and large files, scan for viruses and check whether anyone is spying on or accessing your PC.",
   "main": "src/main/main.js",
   "author": "opKapot",

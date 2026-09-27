@@ -47,7 +47,7 @@ function createWindow({ show = true } = {}) {
   mainWindow.on('close', (event) => {
     // With the Guard on, closing the window keeps protection running in the tray.
     const s = services?.state.getSettings();
-    if (!quitting && s?.closeToTray && services?.security.guard.enabled) {
+    if (!quitting && s?.closeToTray && tray && (services?.security.guard.enabled || services?.game.status().active)) {
       event.preventDefault();
       mainWindow.hide();
     }
@@ -79,7 +79,8 @@ function quit() {
 
 function updateTray() {
   const s = services.state.getSettings();
-  const wanted = services.security.supported && s.guardEnabled;
+  const gameOn = !!services.game.status().active;
+  const wanted = services.security.supported && (s.guardEnabled || gameOn);
   if (!wanted) {
     tray?.destroy();
     tray = null;
@@ -89,10 +90,16 @@ function updateTray() {
     tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
     tray.on('click', showWindow);
   }
-  tray.setToolTip(`opKapot${services.security.guard.enabled ? ': real-time Guard is on' : ''}`);
+  tray.setToolTip(`opKapot${gameOn ? ': Game Mode is on' : services.security.guard.enabled ? ': real-time Guard is on' : ''}`);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open opKapot', click: showWindow },
     { type: 'separator' },
+    {
+      label: 'Game Mode',
+      type: 'checkbox',
+      checked: gameOn,
+      click: () => toggleGameMode(),
+    },
     {
       label: 'Real-time Guard',
       type: 'checkbox',
@@ -109,6 +116,20 @@ function updateTray() {
   ]));
 }
 
+/** Tray toggle: uses the choices saved on the Game Mode page. */
+async function toggleGameMode() {
+  const g = services.game;
+  try {
+    if (g.status().active) await g.disable();
+    else {
+      const plan = await g.plan();
+      await g.enable({ apps: plan.apps.filter((a) => a.checked).map((a) => a.id), services: plan.services.filter((x) => x.checked).map((x) => x.name) });
+    }
+  } catch { /* the page shows errors; the tray stays quiet */ }
+  mainWindow?.webContents.send('game:status', g.status());
+  updateTray();
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -116,16 +137,23 @@ if (!app.requestSingleInstanceLock()) {
 
   Menu.setApplicationMenu(null);
   app.whenReady().then(() => {
-    services = registerIpc({ getWindow: () => mainWindow, demo, onGuardSettingsChanged: () => updateTray() });
+    services = registerIpc({ getWindow: () => mainWindow, demo, onGuardSettingsChanged: () => updateTray(), onGameModeChanged: () => updateTray() });
     services.security.applyGuardSettings();
     createWindow({ show: !background });
     updateTray();
     app.on('activate', showWindow);
   });
 
-  app.on('before-quit', () => {
+  let restoring = false;
+  app.on('before-quit', (event) => {
     quitting = true;
     cancelAll();
+    // Quitting while Game Mode is on puts services and the power plan back first.
+    if (services?.game.status().active && !restoring) {
+      restoring = true;
+      event.preventDefault();
+      services.game.disable().catch(() => {}).finally(() => app.quit());
+    }
   });
   app.on('window-all-closed', () => {
     if (!tray) app.quit();

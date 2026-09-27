@@ -106,9 +106,20 @@ try {
     'kill-process' { Stop-Process -Id ([int]$P.pid) -Force -ErrorAction Stop; Done 'Program closed.' }
     'block-program' {
       $name = 'opKapot block - ' + [IO.Path]::GetFileName($P.path)
-      New-NetFirewallRule -DisplayName $name -Direction Outbound -Program $P.path -Action Block -ErrorAction Stop | Out-Null
-      New-NetFirewallRule -DisplayName $name -Direction Inbound -Program $P.path -Action Block -ErrorAction Stop | Out-Null
-      Done 'Internet access blocked for this program.'
+      $desc = 'Added by opKapot. Unblock it in opKapot > Network Monitor > Blocked.'
+      New-NetFirewallRule -DisplayName $name -Group 'opKapot' -Description $desc -Direction Outbound -Program $P.path -Action Block -ErrorAction Stop | Out-Null
+      New-NetFirewallRule -DisplayName $name -Group 'opKapot' -Description $desc -Direction Inbound -Program $P.path -Action Block -ErrorAction Stop | Out-Null
+      Done 'Internet access blocked for this program. You can unblock it under Network Monitor > Blocked.'
+    }
+    'unblock-program' {
+      $n = 0
+      foreach ($ruleName in @($P.rules)) {
+        $rule = Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
+        # Only ever remove rules opKapot itself created.
+        if ($rule -and ($rule.DisplayName -like 'opKapot block*' -or $rule.Group -eq 'opKapot')) { $rule | Remove-NetFirewallRule -ErrorAction Stop; $n++ }
+      }
+      if ($n -eq 0) { throw 'The block rule was already removed.' }
+      Done 'Unblocked. The program can use the internet again.'
     }
     'task-disable' { Disable-ScheduledTask -TaskPath $P.taskPath -TaskName $P.taskName -ErrorAction Stop | Out-Null; Done 'Task disabled.' }
     'task-enable' { Enable-ScheduledTask -TaskPath $P.taskPath -TaskName $P.taskName -ErrorAction Stop | Out-Null; Done 'Task enabled.' }
@@ -139,9 +150,97 @@ try {
         Done 'Protection will no longer start with Windows.'
       }
     }
+    # ------------------------------------------------------------ Game Mode ---
+    'close-apps' {
+      $sysRoot = [string]$env:SystemRoot
+      $procs = @()
+      foreach ($t in @($P.targets)) {
+        $proc = Get-Process -Id ([int]$t.pid) -ErrorAction SilentlyContinue
+        if (-not $proc) { continue }
+        $exe = [string]$proc.Path
+        # Skip if the ID now belongs to a different program, or anything inside Windows.
+        if (-not $exe -or $exe -ne [string]$t.path) { continue }
+        if ($sysRoot -and $exe.StartsWith($sysRoot, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $procs += $proc
+      }
+      foreach ($proc in $procs) { if ($proc.MainWindowHandle -ne [IntPtr]::Zero) { try { [void]$proc.CloseMainWindow() } catch {} } }
+      $deadline = (Get-Date).AddSeconds(4)
+      while ((Get-Date) -lt $deadline -and @($procs | Where-Object { -not $_.HasExited }).Count -gt 0) {
+        Start-Sleep -Milliseconds 250
+        foreach ($proc in $procs) { try { $proc.Refresh() } catch {} }
+      }
+      foreach ($proc in $procs) { if (-not $proc.HasExited) { try { Stop-Process -Id $proc.Id -Force -ErrorAction Stop } catch {} } }
+      Start-Sleep -Milliseconds 400
+      $closed = @($procs | Where-Object { -not (Get-Process -Id $_.Id -ErrorAction SilentlyContinue) } | ForEach-Object { [int]$_.Id })
+      [ordered]@{ ok = $true; message = ('Closed ' + $closed.Count + ' program(s).'); data = [ordered]@{ closed = $closed } }
+    }
+    'services-stop' {
+      $stopped = @()
+      foreach ($n in @($P.names)) {
+        $svc = Get-Service -Name ([string]$n) -ErrorAction SilentlyContinue
+        if ($svc -and [string]$svc.Status -eq 'Running' -and $svc.CanStop) {
+          try { Stop-Service -Name ([string]$n) -Force -NoWait -ErrorAction Stop; $stopped += [string]$n } catch {}
+        }
+      }
+      [ordered]@{ ok = $true; message = ('Paused ' + $stopped.Count + ' service(s).'); data = [ordered]@{ stopped = $stopped } }
+    }
+    'services-start' {
+      foreach ($n in @($P.names)) { try { Start-Service -Name ([string]$n) -ErrorAction Stop } catch {} }
+      Done 'Services started again.'
+    }
+    'power-high' {
+      $guid = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+      $prev = [regex]::Match([string](powercfg.exe /getactivescheme), $guid).Value
+      $want = '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
+      $created = ''
+      if ([string](powercfg.exe /list) -notmatch $want) {
+        $dup = [regex]::Match([string](powercfg.exe /duplicatescheme $want), $guid)
+        if (-not $dup.Success) { throw 'This PC has no High performance power plan (common on laptops with Modern Standby).' }
+        $want = $dup.Value; $created = $dup.Value
+      }
+      powercfg.exe /setactive $want | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw 'Windows refused to switch the power plan.' }
+      [ordered]@{ ok = $true; message = 'High performance power plan on.'; data = [ordered]@{ previous = $prev; active = $want; created = $created } }
+    }
+    'power-restore' {
+      $guid = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+      if ([string]$P.previous -match $guid) { powercfg.exe /setactive ([string]$P.previous) | Out-Null }
+      if ([string]$P.created -match $guid -and [string]$P.created -ne [string]$P.previous) { powercfg.exe /delete ([string]$P.created) | Out-Null }
+      Done 'Power plan restored.'
+    }
+    'priority-high' {
+      $n = 0
+      foreach ($id in @($P.pids)) {
+        $proc = Get-Process -Id ([int]$id) -ErrorAction SilentlyContinue
+        if ($proc) { try { $proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High; $n++ } catch {} }
+      }
+      Done ('Game set to high priority (' + $n + ' process).')
+    }
+    'reopen-apps' {
+      $n = 0
+      foreach ($exe in @($P.paths)) {
+        if ($exe -and (Test-Path -LiteralPath ([string]$exe) -PathType Leaf)) {
+          # Started through explorer.exe so the app runs as you, not as administrator.
+          Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList ('"' + [string]$exe + '"') -ErrorAction SilentlyContinue
+          $n++
+          Start-Sleep -Milliseconds 300
+        }
+      }
+      Done ('Reopened ' + $n + ' app(s).')
+    }
+    'dns-flush' {
+      Clear-DnsClientCache -ErrorAction SilentlyContinue
+      ipconfig.exe /flushdns | Out-Null
+      Done 'DNS cache cleared.'
+    }
+    'net-reset' {
+      netsh.exe winsock reset | Out-Null
+      netsh.exe int ip reset | Out-Null
+      Done 'Network settings reset. Restart your PC to finish.'
+    }
     default { throw ('Unknown action: ' + $P.type) }
   }
-  ConvertTo-Json -InputObject $result -Compress
+  ConvertTo-Json -InputObject $result -Depth 6 -Compress
 } catch {
   ConvertTo-Json -InputObject ([ordered]@{ ok = $false; message = [string]$_.Exception.Message }) -Compress
 }

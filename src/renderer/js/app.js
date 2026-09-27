@@ -19,76 +19,129 @@ import { StartupView } from './views/security/startup.js';
 import { ExtensionsView } from './views/security/extensions.js';
 import { PrivacyView } from './views/security/privacy.js';
 import { QuarantineView } from './views/security/quarantine.js';
+import { GameModeView } from './views/game/mode.js';
+import { PingView } from './views/game/ping.js';
 import { openAbout, openSettings } from './dialogs/settings.js';
 
-const NAV = [
+// Three sections; each child view belongs to exactly one.
+const SECTIONS = [
   {
-    id: 'security', label: 'Security', icon: 'shieldFill',
-    items: [
-      ['security/center', 'Security Center', () => new SecurityCenterView()],
-      ['security/scan', 'Virus Scan', () => new VirusScanView()],
-      ['security/hackcheck', 'Hack Check', () => new HackCheckView()],
-      ['security/network', 'Network Monitor', () => new NetworkView()],
-      ['security/startup', 'Startup Items', () => new StartupView()],
-      ['security/extensions', 'Browser Extensions', () => new ExtensionsView()],
-      ['security/privacy', 'Camera & Mic', () => new PrivacyView()],
-      ['security/quarantine', 'Quarantine', () => new QuarantineView()],
+    id: 'security', label: 'Security', icon: 'shieldFill', tone: 'green',
+    groups: [{
+      items: [
+        ['security/center', 'Security Center', 'shieldOk', () => new SecurityCenterView()],
+        ['security/scan', 'Virus Scan', 'virus', () => new VirusScanView()],
+        ['security/hackcheck', 'Hack Check', 'hacker', () => new HackCheckView()],
+        ['security/network', 'Network Monitor', 'network', () => new NetworkView()],
+        ['security/startup', 'Startup Items', 'rocket', () => new StartupView()],
+        ['security/extensions', 'Browser Extensions', 'puzzle', () => new ExtensionsView()],
+        ['security/privacy', 'Camera & Mic', 'camera', () => new PrivacyView()],
+        ['security/quarantine', 'Quarantine', 'vault', () => new QuarantineView()],
+      ],
+    }],
+  },
+  {
+    id: 'uninstaller', label: 'Uninstaller', icon: 'trash', tone: 'orange',
+    groups: [
+      {
+        caption: 'Programs',
+        items: [
+          ['programs/all', 'All Programs', 'programs', () => new ProgramsView('all')],
+          ['programs/bundleware', 'Bundleware', 'box', () => new ProgramsView('bundleware')],
+          ['programs/recent', 'Recently Installed', 'download', () => new ProgramsView('recent')],
+          ['programs/large', 'Large Programs', 'disk', () => new ProgramsView('large')],
+          ['programs/infrequent', 'Infrequently Used', 'history', () => new ProgramsView('infrequent')],
+          ['apps', 'Windows Apps', 'windows', () => new AppsView()],
+        ],
+      },
+      {
+        caption: 'Files',
+        items: [
+          ['files/all', 'All Files', 'folder', () => new FilesView('all')],
+          ['files/large', 'Large Files', 'file', () => new FilesView('large')],
+          ['files/duplicates', 'Duplicate Files', 'copy', () => new DuplicatesView()],
+          ['files/analyzer', 'Space Analyzer', 'pie', () => new AnalyzerView()],
+        ],
+      },
+      {
+        caption: 'Clean up',
+        items: [
+          ['junk', 'Junk Cleaner', 'broom', () => new JunkView()],
+          ['history', 'History', 'log', () => new HistoryView()],
+        ],
+      },
     ],
   },
   {
-    id: 'programs', label: 'Programs', icon: 'programs',
-    items: [
-      ['programs/all', 'All Programs', () => new ProgramsView('all')],
-      ['programs/bundleware', 'Bundleware', () => new ProgramsView('bundleware')],
-      ['programs/recent', 'Recently Installed', () => new ProgramsView('recent')],
-      ['programs/large', 'Large Programs', () => new ProgramsView('large')],
-      ['programs/infrequent', 'Infrequently Used', () => new ProgramsView('infrequent')],
-    ],
+    id: 'game', label: 'Game Booster', icon: 'gamepad', tone: 'violet',
+    groups: [{
+      items: [
+        ['game/mode', 'Game Mode', 'bolt', () => new GameModeView()],
+        ['game/ping', 'Ping & Speed', 'gauge', () => new PingView()],
+      ],
+    }],
   },
-  {
-    id: 'files', label: 'Files', icon: 'folder',
-    items: [
-      ['files/all', 'All Files', () => new FilesView('all')],
-      ['files/large', 'Large Files', () => new FilesView('large')],
-      ['files/duplicates', 'Duplicate Files', () => new DuplicatesView()],
-      ['files/analyzer', 'Space Analyzer', () => new AnalyzerView()],
-    ],
-  },
-  { id: 'junk', label: 'Junk Cleaner', icon: 'broom', view: () => new JunkView() },
-  { id: 'apps', label: 'Windows Apps', icon: 'windows', view: () => new AppsView() },
-  { id: 'history', label: 'History', icon: 'history', view: () => new HistoryView() },
 ];
 
 const factories = new Map();
-for (const group of NAV) {
-  if (group.view) factories.set(group.id, group.view);
-  for (const [id, , make] of group.items || []) factories.set(id, make);
+const sectionOf = new Map();
+for (const section of SECTIONS) {
+  for (const group of section.groups) {
+    for (const [id, , , make] of group.items) {
+      factories.set(id, make);
+      sectionOf.set(id, section.id);
+    }
+  }
 }
 
 const views = new Map();
 let current = null;
 let currentId = null;
+const collapsed = new Set();
+const lastInSection = new Map();
+try {
+  for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem('opk:last-in-section') || '{}'))) if (factories.has(v)) lastInSection.set(k, v);
+} catch { /* storage unavailable */ }
 
-function navBadge(groupId) {
-  if (groupId === 'history') return unseenHistory ? '<span class="nav-dot"></span>' : '';
-  if (groupId === 'security') {
+function sectionBadge(id) {
+  if (id === 'security') {
     const st = securityStore.status;
-    if (st?.overall === 'danger') return '<span class="nav-dot"></span>';
-    if (st?.overall === 'warning') return '<span class="nav-dot warn"></span>';
+    if (st?.overall === 'danger') return '<span class="nav-dot" title="Problems found"></span>';
+    if (st?.overall === 'warning') return '<span class="nav-dot warn" title="Needs attention"></span>';
   }
+  if (id === 'game' && gameActive) return '<span class="nav-on">ON</span>';
+  if (id === 'uninstaller' && unseenHistory) return '<span class="nav-dot" title="New in History"></span>';
   return '';
 }
 
-// Only the group holding the current view is expanded, so the sidebar stays short.
 function renderNav() {
   const nav = document.getElementById('nav');
-  nav.innerHTML = NAV.map((group) => {
-    const active = currentId === group.id || currentId?.startsWith(`${group.id}/`);
-    const head = `<div class="nav-head${active ? ' active' : ''}${group.items ? '' : ' solo'}" data-go="${group.items ? group.items[0][0] : group.id}">
-      ${icon(group.icon, { size: 24 })}<span>${esc(group.label)}</span>${navBadge(group.id)}${group.items ? `<span class="nav-chev">${icon(active ? 'chevronDown' : 'chevronRight', { size: 15 })}</span>` : ''}</div>`;
-    const items = active ? (group.items || []).map(([id, label]) => `<div class="nav-item${currentId === id ? ' active' : ''}" data-go="${id}">${esc(label)}</div>`).join('') : '';
-    return `<div class="nav-group${active ? ' open' : ''}">${head}${items}</div>`;
+  const currentSection = sectionOf.get(currentId);
+  nav.innerHTML = SECTIONS.map((section) => {
+    const here = currentSection === section.id;
+    const open = here && !collapsed.has(section.id);
+    const head = `<button class="sec-head${here ? ' here' : ''}" data-section="${section.id}" aria-expanded="${open}">
+      <span class="sec-badge">${icon(section.icon, { size: 18 })}</span><span class="sec-label">${esc(section.label)}</span>${sectionBadge(section.id)}
+      <span class="nav-chev">${icon(open ? 'chevronDown' : 'chevronRight', { size: 15 })}</span></button>`;
+    const body = open ? `<div class="sec-children">${section.groups.map((g) => `
+      ${g.caption ? `<div class="sec-caption">${esc(g.caption)}</div>` : ''}
+      ${g.items.map(([id, label, ic]) => `<div class="nav-item${currentId === id ? ' active' : ''}" data-go="${id}">${icon(ic, { size: 17 })}<span>${esc(label)}</span>${id === 'history' && unseenHistory ? '<span class="nav-dot"></span>' : ''}</div>`).join('')}`).join('')}
+    </div>` : '';
+    return `<div class="nav-section tone-${section.tone}${open ? ' open' : ''}${here ? ' here' : ''}">${head}${body}</div>`;
   }).join('');
+}
+
+function onSectionClick(sectionId) {
+  const section = SECTIONS.find((x) => x.id === sectionId);
+  if (!section) return;
+  if (sectionOf.get(currentId) === sectionId) {
+    if (collapsed.has(sectionId)) collapsed.delete(sectionId);
+    else collapsed.add(sectionId);
+    renderNav();
+    return;
+  }
+  collapsed.delete(sectionId);
+  navigate(lastInSection.get(sectionId) || section.groups[0].items[0][0]);
 }
 
 function navigate(id) {
@@ -99,6 +152,10 @@ function navigate(id) {
   current = views.get(id);
   currentId = id;
   if (id === 'history') unseenHistory = false;
+  lastInSection.set(sectionOf.get(id), id);
+  try {
+    localStorage.setItem('opk:last-in-section', JSON.stringify(Object.fromEntries(lastInSection)));
+  } catch { /* storage unavailable */ }
   const host = document.getElementById('view-host');
   host.replaceChildren(current.mount());
   current.onShow?.();
@@ -144,10 +201,34 @@ function renderSecurityBar(bar) {
     : '<button class="btn btn-orange" data-go="security/center" data-smart-scan>Smart Scan</button><a class="link" data-go="security/hackcheck">Run Hack Check</a>'}</div>`;
 }
 
+let gameStatus = null;
+let lastNetTest = null;
+
+function renderGameBar(bar) {
+  const a = gameStatus?.active;
+  if (!gameStatus?.supported) {
+    bar.innerHTML = '';
+    return;
+  }
+  const t = lastNetTest;
+  const net = t ? `Last test: ${t.ping ?? '?'} ms ping, ${t.jitter ?? '?'} ms jitter${t.download != null ? `, ${t.download} Mbps down` : ''} (${esc(relativeTime(t.time).toLowerCase())})` : 'Run Ping & Speed to see what causes lag.';
+  bar.innerHTML = `
+    <div class="bb-shield ${a ? 'tone-violet on' : 'tone-violet'}">${icon(a ? 'bolt' : 'gamepad', { size: 30 })}</div>
+    <div class="bb-text"><div class="bb-title">${a ? `Game Mode is on for ${esc(a.game)}` : 'Game Mode is off'}</div>
+      <div class="bb-sub">${a ? `${a.closed} apps closed · ${a.stopped} services paused${a.power ? ' · High performance' : ''} · ${esc(relativeTime(a.since).toLowerCase())}` : net}</div></div>
+    <div class="bb-actions">${currentId === 'game/mode'
+    ? '<button class="btn btn-orange btn-violet" data-go="game/ping">Test my ping</button><a class="link" data-go="security/network">Who is connected?</a>'
+    : `<button class="btn btn-orange btn-violet" data-go="game/mode">${a ? 'Game Mode: ON' : 'Open Game Mode'}</button><a class="link" data-go="security/center">Security Center</a>`}</div>`;
+}
+
 function renderBottomBar() {
   const bar = document.getElementById('bottom-bar');
   if (currentId?.startsWith('security/')) {
     renderSecurityBar(bar);
+    return;
+  }
+  if (currentId?.startsWith('game/')) {
+    renderGameBar(bar);
     return;
   }
   const drive = appState.systemDrive;
@@ -253,7 +334,27 @@ function wireSecurity() {
   securityStore.loadStatus();
 }
 
+function wireGame() {
+  const apply = (st) => {
+    gameStatus = st;
+    gameActive = !!st?.active;
+    renderNav();
+    if (currentId?.startsWith('game/')) renderBottomBar();
+  };
+  api.game.onStatus(apply);
+  api.game.status().then(apply).catch(() => {});
+  api.net.last().then((t) => {
+    lastNetTest = t;
+    if (currentId?.startsWith('game/')) renderBottomBar();
+  }).catch(() => {});
+  document.addEventListener('opk:net-test', (e) => {
+    lastNetTest = e.detail;
+    if (currentId?.startsWith('game/')) renderBottomBar();
+  });
+}
+
 let unseenHistory = false;
+let gameActive = false;
 
 async function main() {
   await appState.init();
@@ -265,12 +366,18 @@ async function main() {
   wireKeyboard();
   setNavigator(navigate);
   document.addEventListener('click', (e) => {
+    const head = e.target.closest('[data-section]');
+    if (head) {
+      onSectionClick(head.dataset.section);
+      return;
+    }
     const go = e.target.closest('[data-go]');
     if (!go) return;
     navigate(go.dataset.go);
     if (go.hasAttribute('data-smart-scan')) current?.smartScan?.();
   });
   wireSecurity();
+  wireGame();
   appState.on('drives', renderBottomBar);
   appState.on('history', () => {
     if (currentId !== 'history') {

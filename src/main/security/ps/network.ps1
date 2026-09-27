@@ -1,7 +1,7 @@
 # Live TCP/UDP sockets with their owning programs.
 
 $procs = @{}
-foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) { $procs[[int]$p.Id] = $p }
+foreach ($proc in @(Get-Process -ErrorAction SilentlyContinue)) { $procs[[int]$proc.Id] = $proc }
 
 Section 'tcp' {
   @(Get-NetTCPConnection -ErrorAction Stop | Where-Object { ([string]$_.State -ne 'TimeWait') -and ([string]$_.State -ne 'Bound') } | ForEach-Object {
@@ -25,8 +25,8 @@ Section 'processes' {
   $ids = @(@($R['tcp']) + @($R['udp']) | Where-Object { $_ } | ForEach-Object { $_.pid } | Where-Object { $null -ne $_ } | Sort-Object -Unique)
   $info = [ordered]@{}
   foreach ($id in $ids) {
-    $p = $procs[[int]$id]
-    if ($p) { $info[[string]$id] = [ordered]@{ name = [string]$p.ProcessName; path = [string]$p.Path; company = [string]$p.Company; description = [string]$p.Description } }
+    $proc = $procs[[int]$id]
+    if ($proc) { $info[[string]$id] = [ordered]@{ name = [string]$proc.ProcessName; path = [string]$proc.Path; company = [string]$proc.Company; description = [string]$proc.Description } }
   }
   $info
 }

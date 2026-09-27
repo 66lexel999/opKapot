@@ -1,6 +1,6 @@
 'use strict';
 
-const { asArray, finding } = require('./common');
+const { asObjects, str, finding } = require('./common');
 
 const CAP_LABEL = { webcam: 'Camera', microphone: 'Microphone', location: 'Location' };
 
@@ -18,8 +18,8 @@ function appName(entry) {
 
 /** Which apps used the camera, microphone or location and when. */
 function analyzePrivacy(consent, now = Date.now()) {
-  return asArray(consent)
-    .filter((e) => e.start)
+  return asObjects(consent)
+    .filter((e) => e.start && CAP_LABEL[str(e.cap)] && str(e.name))
     .map((e) => {
       const app = appName(e);
       const inUse = !!e.start && (!e.stop || e.stop === 0);

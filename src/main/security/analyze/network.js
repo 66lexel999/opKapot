@@ -1,13 +1,14 @@
 'use strict';
 
 const { REMOTE_TOOLS, REMOTE_PORTS, P2P_AND_GAMES } = require('./knowledge');
-const { asArray, classifyIp, IP_LABEL, sigState, signerName, pathKind, USER_WRITABLE, finding } = require('./common');
+const { asArray, asObjects, str, classifyIp, IP_LABEL, sigState, signerName, pathKind, USER_WRITABLE, finding } = require('./common');
 
 /** Which remote-control product (if any) a process belongs to. */
 function matchRemoteTool(proc) {
-  if (!proc || !proc.name) return null;
+  const name = str(proc?.name);
+  if (!name) return null;
   for (const tool of REMOTE_TOOLS) {
-    if (!tool.process.test(proc.name)) continue;
+    if (!tool.process.test(name)) continue;
     if (tool.company && !tool.company.test(`${proc.company || ''} ${proc.description || ''} ${proc.path || ''}`)) continue;
     return tool;
   }
@@ -21,14 +22,15 @@ const SYSTEM_NAMES = { 0: 'System Idle Process', 4: 'System' };
  * (in / out / listening), where the other side is, and risk flags.
  */
 function analyzeConnections(raw, { sigs = {}, env = {} } = {}) {
-  const tcp = asArray(raw?.tcp);
-  const udp = asArray(raw?.udp);
+  const tcp = asObjects(raw?.tcp);
+  const udp = asObjects(raw?.udp);
   const procs = raw?.processes && typeof raw.processes === 'object' ? raw.processes : {};
   const listening = new Set(tcp.filter((c) => c.state === 'Listen').map((c) => c.localPort));
 
   const rows = [];
-  for (const c of [...tcp, ...udp]) {
-    const p = procs[String(c.pid)] || {};
+  for (const c of [...tcp, ...udp]) try {
+    const found = procs[String(c.pid)];
+    const p = found && typeof found === 'object' ? { ...found, name: str(found.name), path: str(found.path), company: str(found.company) } : {};
     const name = p.name || SYSTEM_NAMES[c.pid] || `Process ${c.pid}`;
     const remoteKind = classifyIp(c.remoteAddress);
     const localKind = classifyIp(c.localAddress);
@@ -76,7 +78,7 @@ function analyzeConnections(raw, { sigs = {}, env = {} } = {}) {
       flags,
       risk,
     });
-  }
+  } catch { /* skip a malformed connection */ }
   return rows;
 }
 
@@ -93,7 +95,7 @@ function networkFindings(rows) {
     const worst = list.some((r) => r.risk === 'danger') ? 'danger' : list.some((r) => r.risk === 'warning') ? 'warning' : 'notice';
     const ips = [...new Set(list.map((r) => r.remoteAddress))];
     out.push(finding({
-      id: `net-inbound:${proc.toLowerCase()}`,
+      id: `net-inbound:${String(proc).toLowerCase()}`,
       category: 'remote',
       severity: worst,
       title: `Devices on the internet are connected to ${proc}`,

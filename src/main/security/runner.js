@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { run } = require('../lib/exec');
+const { normalizePs } = require('./analyze/common');
 
 const SCRIPT_DIR = path.join(__dirname, 'ps');
 // Tests point this at PowerShell 7 to exercise the real scripts off Windows.
@@ -11,6 +12,8 @@ const cache = new Map();
 
 const PRELUDE = [
   "$ErrorActionPreference = 'SilentlyContinue'",
+  // Stops Windows PowerShell 5.1 writing some arrays as {"value": [...], "Count": n}.
+  'Remove-TypeData System.Array -ErrorAction SilentlyContinue',
   "$ProgressPreference = 'SilentlyContinue'",
   '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false',
 ].join('; ');
@@ -47,7 +50,7 @@ async function runPs(name, params = {}, { timeout = 120_000, signal } = {}) {
   const line = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith('{') || l.startsWith('[')).pop();
   if (line) {
     try {
-      return JSON.parse(line);
+      return normalizePs(JSON.parse(line));
     } catch { /* fall through */ }
   }
   const reason = res.timedOut ? 'took too long' : (res.stderr || res.error?.message || 'returned no data').trim().split(/\r?\n/)[0];

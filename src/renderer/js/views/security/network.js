@@ -7,7 +7,7 @@ import { viewHeader, emptyHtml, loadingHtml, opButtons } from '../common.js';
 import { sevPill, appIcon, confirmRun, notSupportedHtml } from './shared.js';
 
 const DIR = { in: ['In', 'Incoming'], out: ['Out', 'Outgoing'], listen: ['Listen', 'Waiting for connections'] };
-const FILTERS = [['all', 'All'], ['internet', 'Internet'], ['in', 'Incoming'], ['listen', 'Listening'], ['flagged', 'Flagged']];
+const FILTERS = [['all', 'All'], ['internet', 'Internet'], ['in', 'Incoming'], ['listen', 'Listening'], ['flagged', 'Flagged'], ['blocked', 'Blocked']];
 const RISK = { danger: 0, warning: 1, notice: 2, ok: 3 };
 
 /** Live view of every connection and open port, and which program owns it. */
@@ -29,8 +29,8 @@ export class NetworkView {
         actions: `<label class="check-row live-toggle"><input type="checkbox" data-live checked><span>Live</span></label><button class="btn" data-refresh>${icon('refresh', { size: 16 })}Refresh</button>`,
       })}
       <div class="toolbar">
-        <div class="seg" data-filter>${FILTERS.map(([v, l]) => `<button data-v="${v}" class="${v === 'all' ? 'on' : ''}">${l}</button>`).join('')}</div>
-        <label class="check-row"><input type="checkbox" data-local checked><span>Hide connections inside this PC</span></label>
+        <div class="seg" data-filter>${FILTERS.map(([v, l]) => `<button data-v="${v}" class="${v === 'all' ? 'on' : ''}">${l}${v === 'blocked' ? ' <span class="seg-count" data-blocked-count></span>' : ''}</button>`).join('')}</div>
+        <label class="check-row" data-local-row><input type="checkbox" data-local checked><span>Hide connections inside this PC</span></label>
         <span class="net-summary muted small"></span>
       </div>
       <div class="panel"></div>
@@ -63,7 +63,19 @@ export class NetworkView {
         { label: 'End program', icon: 'close', danger: true, onClick: () => this.act('kill', r) },
       ]),
     });
-    this.el.querySelector('.panel').append(this.table.el);
+    this.blockedTable = new DataTable({
+      rowHeight: 58,
+      selectable: false,
+      emptyHtml: loadingHtml('Reading Windows Firewall…'),
+      columns: [
+        { key: 'name', label: (t) => `Blocked program (${t.rows.length})`, render: (b) => `<div class="cell-name">${appIcon(b.path, b.name, 28)}<div class="name-text"><div class="name-title trunc">${esc(b.name.replace(/\.exe$/i, ''))}</div><div class="name-sub trunc" title="${esc(b.path)}">${esc(b.path || 'Program file unknown')}</div></div></div>` },
+        { key: 'dir', label: 'Blocked', width: '220px', render: (b) => `<span class="trunc">${b.inbound && b.outbound ? 'Internet in and out' : b.outbound ? 'Outgoing connections' : 'Incoming connections'}</span>` },
+        { key: 'op', label: 'Action', width: '150px', align: 'center', render: () => '<button class="btn btn-sm btn-accent" data-action="unblock">Unblock</button>' },
+      ],
+      onAction: (_a, b) => this.unblock(b),
+    });
+    this.blockedTable.el.hidden = true;
+    this.el.querySelector('.panel').append(this.blockedTable.el);
     this.el.querySelector('[data-refresh]').addEventListener('click', () => this.load());
     this.el.querySelector('[data-live]').addEventListener('change', (e) => {
       this.live = e.target.checked;
@@ -78,16 +90,49 @@ export class NetworkView {
       if (!b) return;
       this.filter = b.dataset.v;
       for (const x of this.el.querySelectorAll('[data-filter] button')) x.classList.toggle('on', x === b);
+      this.showBlocked(this.filter === 'blocked');
       this.update();
     });
-    securityStore.on('icons', () => this.visible && this.table.refresh());
+    securityStore.on('icons', () => this.visible && (this.table.refresh(), this.blockedTable.refresh()));
     return this.el;
   }
 
   onShow() {
     this.visible = true;
     this.load();
+    this.loadBlocked();
     this.schedule();
+  }
+
+  showBlocked(on) {
+    this.table.el.hidden = on;
+    this.blockedTable.el.hidden = !on;
+    this.el.querySelector('[data-local-row]').hidden = on;
+    this.summary.hidden = on;
+    if (on) this.loadBlocked();
+  }
+
+  async loadBlocked() {
+    try {
+      this.blocked = await api.security.blocked();
+      securityStore.loadIcons(this.blocked.map((b) => b.path));
+      this.blockedTable.setEmpty(emptyHtml('No programs are blocked.', 'Programs you block from Network Monitor or Hack Check appear here, so you can unblock them.', 'ban'));
+      this.blockedTable.setRows(this.blocked);
+      this.el.querySelector('[data-blocked-count]').textContent = this.blocked.length ? String(this.blocked.length) : '';
+    } catch (err) {
+      this.blockedTable.setEmpty(emptyHtml('Could not read Windows Firewall.', errorMessage(err), 'alert'));
+      this.blockedTable.setRows([]);
+    }
+  }
+
+  async unblock(b) {
+    const res = await confirmRun({
+      title: `Unblock ${b.name.replace(/\.exe$/i, '')}?`,
+      message: `${b.name} will be able to use the internet again.`,
+      confirmLabel: 'Unblock',
+      run: () => api.security.unblock(b.id),
+    });
+    if (res?.ok) this.loadBlocked();
   }
 
   onHide() {
@@ -97,6 +142,7 @@ export class NetworkView {
 
   refresh() {
     this.load();
+    this.loadBlocked();
   }
 
   schedule() {
@@ -152,15 +198,19 @@ export class NetworkView {
       return;
     }
     const block = kind === 'block';
+    const browser = /^(msedge|chrome|firefox|brave|opera|vivaldi|iexplore)$/i.test(r.process);
     const res = await confirmRun({
       title: block ? `Block ${r.process}?` : `End ${r.process}?`,
       message: block
-        ? `${r.process} will not be able to use the internet or accept connections until you remove the "opKapot block" rule in Windows Firewall.`
+        ? `${r.process} will not be able to use the internet or accept connections.${browser ? ' It is a web browser, so no websites will open in it.' : ''} You can undo this any time under Blocked.`
         : `${r.process} will be closed immediately. Unsaved work in it will be lost.`,
       confirmLabel: block ? 'Block' : 'End program',
       kind: 'danger',
       run: () => api.security.networkAction(r.id, block ? 'block' : 'kill'),
     });
-    if (res?.ok) this.load();
+    if (res?.ok) {
+      this.load();
+      if (block) this.loadBlocked();
+    }
   }
 }

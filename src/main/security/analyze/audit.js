@@ -2,7 +2,7 @@
 
 const K = require('./knowledge');
 const {
-  P, asArray, sectionError, classifyIp, daysAgo, finding, pathKind, USER_WRITABLE, KIND_LABEL, normalizeWinPath,
+  P, asArray, asObjects, str, sectionError, classifyIp, daysAgo, finding, pathKind, USER_WRITABLE, KIND_LABEL, normalizeWinPath,
   sigState, signerName, describeSig, isMicrosoftSigned, envGet, SEVERITY_ORDER, CATEGORIES,
 } = require('./common');
 const { networkFindings, matchRemoteTool } = require('./network');
@@ -73,8 +73,8 @@ function protection(a, env, now) {
       }));
     }
     for (const [kind, list] of [['path', d.exclusionPath], ['extension', d.exclusionExtension], ['process', d.exclusionProcess]]) {
-      for (const value of asArray(list)) {
-        if (/^N\/A/i.test(value)) continue;
+      for (const value of asArray(list).map(str)) {
+        if (!value || /^N\/A/i.test(value)) continue;
         const sev = exclusionRisk(kind, value, env);
         out.push(finding({
           id: `av:exclusion:${kind}:${value.toLowerCase()}`, category: 'protection', severity: sev,
@@ -329,9 +329,10 @@ function keylogger(a, ctx) {
         }));
       }
     }
-    for (const i of asArray(inj.ifeo)) {
-      const exe = String(i.exe).toLowerCase();
-      const dbg = String(i.debugger);
+    for (const i of asObjects(inj.ifeo)) {
+      const exe = str(i.exe).toLowerCase();
+      const dbg = str(i.debugger);
+      if (!exe || !dbg || !str(i.key)) continue;
       const access = K.ACCESSIBILITY_EXES.has(exe);
       const benign = /vsjitdebugger|procexp|windbg|devenv/i.test(dbg) && !access;
       out.push(finding({
@@ -341,26 +342,27 @@ function keylogger(a, ctx) {
           ? 'Pressing an accessibility shortcut on the lock screen opens another program with full SYSTEM rights, letting anyone in without a password.'
           : 'Whenever this program starts, Windows runs a different one instead. Malware uses this to block security tools or to hide.',
         evidence: [`Runs instead: ${dbg}`],
-        fix: { label: 'Remove', action: { type: 'reg-delete-value', regKey: i.key.replace(/^HKEY_LOCAL_MACHINE/, 'HKLM'), name: 'Debugger' }, confirm: `Remove the redirect on ${i.exe}? A backup is saved first.` },
+        fix: { label: 'Remove', action: { type: 'reg-delete-value', regKey: str(i.key).replace(/^HKEY_LOCAL_MACHINE/, 'HKLM'), name: 'Debugger' }, confirm: `Remove the redirect on ${i.exe}? A backup is saved first.` },
       }));
     }
-    for (const sx of asArray(inj.silentExit)) {
+    for (const sx of asObjects(inj.silentExit)) {
+      if (!str(sx.key) || !str(sx.monitor)) continue;
       out.push(finding({
         id: `silentexit:${sx.exe}`, category: 'keylogger', severity: 'warning',
         title: `A hidden program runs whenever ${sx.exe} closes`,
         summary: 'A rarely used Windows feature (SilentProcessExit) that malware uses to stay on your PC.',
         evidence: [`Runs: ${sx.monitor}`],
-        fix: { label: 'Remove', action: { type: 'reg-delete-value', regKey: sx.key.replace(/^HKEY_LOCAL_MACHINE/, 'HKLM'), name: 'MonitorProcess' }, confirm: 'Remove this hidden trigger? A backup is saved first.' },
+        fix: { label: 'Remove', action: { type: 'reg-delete-value', regKey: str(sx.key).replace(/^HKEY_LOCAL_MACHINE/, 'HKLM'), name: 'MonitorProcess' }, confirm: 'Remove this hidden trigger? A backup is saved first.' },
       }));
     }
     const wl = 'HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon';
-    if (inj.shell && !/^explorer\.exe,?$/i.test(inj.shell.trim())) {
+    if (str(inj.shell).trim() && !/^explorer\.exe,?$/i.test(str(inj.shell).trim())) {
       out.push(finding({ id: 'winlogon:shell', category: 'keylogger', severity: 'danger', title: 'Windows starts an extra program at sign-in (Winlogon Shell)', summary: 'The Windows desktop normally starts only explorer.exe here.', evidence: [`Shell = ${inj.shell}`], fix: { label: 'Restore', action: { type: 'reg-set', regKey: wl, name: 'Shell', value: 'explorer.exe', valueType: 'String' }, confirm: 'Restore the Windows default (explorer.exe)? A backup is saved first.' } }));
     }
-    if (inj.userinit && !/^[a-z]:\\windows\\system32\\userinit\.exe,?$/i.test(inj.userinit.trim())) {
+    if (str(inj.userinit).trim() && !/^[a-z]:\\windows\\system32\\userinit\.exe,?$/i.test(str(inj.userinit).trim())) {
       out.push(finding({ id: 'winlogon:userinit', category: 'keylogger', severity: 'danger', title: 'Windows starts an extra program at sign-in (Userinit)', summary: 'Only userinit.exe should run here.', evidence: [`Userinit = ${inj.userinit}`], fix: { label: 'Restore', action: { type: 'reg-set', regKey: wl, name: 'Userinit', value: `${envGet(env, 'SystemRoot') || 'C:\\Windows'}\\system32\\userinit.exe,`, valueType: 'String' }, confirm: 'Restore the Windows default? A backup is saved first.' } }));
     }
-    if (inj.userShell) {
+    if (str(inj.userShell).trim()) {
       out.push(finding({ id: 'winlogon:usershell', category: 'keylogger', severity: 'danger', title: 'Your account starts a custom program instead of the normal desktop', summary: 'A per-user Winlogon Shell is set. That is unusual and often malicious.', evidence: [`Shell = ${inj.userShell}`], fix: { label: 'Remove', action: { type: 'reg-delete-value', regKey: 'HKCU\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon', name: 'Shell' }, confirm: 'Remove the custom shell? A backup is saved first.' } }));
     }
     const lsa = [
@@ -411,7 +413,8 @@ function keylogger(a, ctx) {
 
   // Processes pretending to be Windows, or running unsigned from risky folders
   const flagged = [];
-  for (const p of asArray(a.processes)) {
+  for (const raw of asObjects(a.processes)) {
+    const p = { ...raw, path: typeof raw.path === 'string' ? raw.path : '', name: str(raw.name) };
     if (!p.path) continue;
     const base = P.basename(p.path).toLowerCase();
     const kind = pathKind(p.path, env);
@@ -492,23 +495,23 @@ function sharing(a) {
   const out = [];
   const sh = a.sharing && !sectionError(a.sharing) ? a.sharing : null;
   if (!sh) return out;
-  const shares = asArray(sh.shares).filter((s) => !s.special && !/^(print\$|ipc\$|admin\$)$/i.test(s.name));
+  const shares = asObjects(sh.shares).filter((s) => str(s.name) && !s.special && !/^(print\$|ipc\$|admin\$)$/i.test(str(s.name)));
   for (const s of shares) {
-    const open = asArray(s.access).some((x) => /everyone|guest|anonymous|jeder|tout le monde|todos/i.test(x.account) && /full|change/i.test(x.right) && /allow/i.test(x.type));
+    const open = asObjects(s.access).some((x) => /everyone|guest|anonymous|jeder|tout le monde|todos/i.test(str(x.account)) && /full|change/i.test(str(x.right)) && /allow/i.test(str(x.type)));
     out.push(finding({
-      id: `share:${s.name.toLowerCase()}`, category: 'sharing', severity: open ? 'warning' : 'notice',
+      id: `share:${str(s.name).toLowerCase()}`, category: 'sharing', severity: open ? 'warning' : 'notice',
       title: `Folder shared on the network: ${s.name}`,
       summary: open ? 'Everyone on your network can change or delete these files.' : 'Other devices on your network can open this folder.',
-      evidence: [s.path, ...asArray(s.access).map((x) => `${x.account}: ${x.right}`)],
+      evidence: [str(s.path), ...asObjects(s.access).map((x) => `${str(x.account)}: ${str(x.right)}`)].filter(Boolean),
       advice: 'Stop sharing it in the folder\'s Properties → Sharing if you don\'t need it.',
     }));
   }
-  for (const s of asArray(sh.sessions)) {
+  for (const s of asObjects(sh.sessions)) {
     out.push(finding({
       id: `smb-session:${s.client}`, category: 'sharing', severity: classifyIp(s.client) === 'public' ? 'danger' : 'warning',
       title: `${s.client} is connected to your shared files right now`,
       summary: `Signed in as ${s.user || 'unknown'} with ${s.opens} file${s.opens === 1 ? '' : 's'} open.`,
-      evidence: asArray(sh.openFiles).filter((f) => f.client === s.client).slice(0, 10).map((f) => f.path),
+      evidence: asObjects(sh.openFiles).filter((f) => f.client === s.client).slice(0, 10).map((f) => str(f.path)),
     }));
   }
   if (sh.smb1) {
@@ -578,13 +581,15 @@ function internet(a, ctx) {
 function browser(a, ctx) {
   const out = [];
   const domain = !!a.os?.domain;
-  for (const pol of asArray(a.browserPolicies)) {
-    const name = /Google\\Chrome/i.test(pol.key) ? 'Chrome' : /Brave/i.test(pol.key) ? 'Brave' : /Edge/i.test(pol.key) ? 'Edge' : /Firefox/i.test(pol.key) ? 'Firefox' : /Opera/i.test(pol.key) ? 'Opera' : /Vivaldi/i.test(pol.key) ? 'Vivaldi' : 'Chromium';
-    const regKey = pol.key.replace(/^(HKLM|HKCU):\\/, '$1\\');
-    const values = pol.values || {};
-    for (const sub of asArray(pol.subkeys)) {
-      if (/^ExtensionInstallForcelist$/i.test(sub.name)) {
-        const ids = Object.values(sub.values || {}).map(String);
+  for (const pol of asObjects(a.browserPolicies)) {
+    const polKey = str(pol.key);
+    if (!polKey) continue;
+    const name = /Google\\Chrome/i.test(polKey) ? 'Chrome' : /Brave/i.test(polKey) ? 'Brave' : /Edge/i.test(polKey) ? 'Edge' : /Firefox/i.test(polKey) ? 'Firefox' : /Opera/i.test(polKey) ? 'Opera' : /Vivaldi/i.test(polKey) ? 'Vivaldi' : 'Chromium';
+    const regKey = polKey.replace(/^(HKLM|HKCU):\\/, '$1\\');
+    const values = pol.values && typeof pol.values === 'object' && !Array.isArray(pol.values) ? pol.values : {};
+    for (const sub of asObjects(pol.subkeys)) {
+      if (/^ExtensionInstallForcelist$/i.test(str(sub.name))) {
+        const ids = Object.values(sub.values && typeof sub.values === 'object' ? sub.values : {}).map(String);
         out.push(finding({
           id: `policy:forcelist:${regKey}`, category: 'browser', severity: domain ? 'notice' : 'danger',
           title: `${name} is forced to install ${ids.length} extension${ids.length > 1 ? 's' : ''}`,
@@ -619,17 +624,18 @@ function browser(a, ctx) {
       out.push(finding({ id: `policy:other:${regKey}`, category: 'browser', severity: 'notice', title: `${name} shows "Managed by your organization"`, summary: `${other.length} browser polic${other.length > 1 ? 'ies are' : 'y is'} set. Some programs (antivirus, parental controls) do this legitimately.`, evidence: other.slice(0, 10).map((k) => `${k} = ${values[k]}`) }));
     }
   }
-  for (const e of asArray(a.externalExtensions)) {
-    const store = /clients2\.google\.com|edge\.microsoft\.com\/extensionwebstorebase/i.test(e.updateUrl || '');
+  for (const e of asObjects(a.externalExtensions)) {
+    if (!str(e.key)) continue;
+    const store = /clients2\.google\.com|edge\.microsoft\.com\/extensionwebstorebase/i.test(str(e.updateUrl));
     out.push(finding({
       id: `ext-reg:${e.key}`, category: 'browser', severity: store ? 'notice' : 'warning',
       title: `A program adds a browser extension automatically: ${e.id}`,
       summary: store ? 'It comes from the official store, installed by another program (often password managers or antivirus).' : 'It is installed from outside the official store. Adware does this.',
       evidence: [e.key, e.updateUrl || e.path].filter(Boolean),
-      fix: { label: 'Remove', action: { type: 'reg-delete-key', regKey: e.key.replace(/^(HKLM|HKCU):\\/, '$1\\') }, confirm: 'Stop this program from adding the extension? A backup is saved first.' },
+      fix: { label: 'Remove', action: { type: 'reg-delete-key', regKey: str(e.key).replace(/^(HKLM|HKCU):\\/, '$1\\') }, confirm: 'Stop this program from adding the extension? A backup is saved first.' },
     }));
   }
-  out.push(...extensionFindings(ctx.extensions || []));
+  out.push(...extensionFindings(asObjects(ctx.extensions)));
   return out;
 }
 
@@ -638,7 +644,8 @@ function browser(a, ctx) {
 /** Files whose signatures the audit needs (drivers, LSA packages, running programs). */
 function auditFiles(a, env) {
   const files = [];
-  for (const d of asArray(a.keyboard?.drivers)) if (!/^kbdclass$/i.test(d.name)) files.push(driverFile(d, env));
+  if (!a || typeof a !== 'object') return files;
+  for (const d of asObjects(a.keyboard?.drivers)) if (!/^kbdclass$/i.test(str(d.name))) files.push(driverFile(d, env));
   const sys = P.join(envGet(env, 'SystemRoot') || 'C:\\Windows', 'System32');
   for (const key of ['security', 'notification', 'authentication']) {
     for (const n of asArray(a.injection?.[key])) {
@@ -647,10 +654,25 @@ function auditFiles(a, env) {
       if (!known.has(name)) files.push(P.join(sys, `${n}.dll`));
     }
   }
-  for (const p of asArray(a.processes)) {
-    if (p.path && USER_WRITABLE.has(pathKind(p.path, env))) files.push(p.path);
+  for (const p of asObjects(a.processes)) {
+    if (typeof p.path === 'string' && p.path && USER_WRITABLE.has(pathKind(p.path, env))) files.push(p.path);
   }
-  return files;
+  return files.filter((f) => typeof f === 'string' && f);
+}
+
+/** A finding that says part of the check failed, with enough detail to report it. */
+function crashFinding(category, err) {
+  const frame = String(err?.stack || '').split('\n').find((l) => /\.js:\d+/.test(l)) || '';
+  const where = (frame.match(/([\w.-]+\.js):(\d+)/) || []).slice(1).join(':');
+  return finding({
+    id: `audit:error:${category}`,
+    category,
+    severity: 'notice',
+    title: `Part of the check could not finish: ${CATEGORIES[category] || category}`,
+    summary: 'Windows returned information in a form opKapot didn\'t expect. The other checks still ran.',
+    evidence: [String(err?.message || err), where ? `at ${where}` : ''].filter(Boolean),
+    advice: 'Please report this with the details above so it can be fixed.',
+  });
 }
 
 function analyzeAudit(ctx) {
@@ -658,15 +680,23 @@ function analyzeAudit(ctx) {
   const env = ctx.env || {};
   const now = ctx.now || Date.now();
   const full = { ...ctx, sigs: ctx.sigs || {}, env, userSid: ctx.userSid || a.os?.userSid };
+  // Each area runs on its own: unexpected data in one never stops the others.
+  const area = (category, run) => {
+    try {
+      return run();
+    } catch (err) {
+      return [crashFinding(category, err)];
+    }
+  };
   const findings = [
-    ...protection(a, env, now),
-    ...remote(a, full),
-    ...keylogger(a, full),
-    ...internet(a, full),
-    ...browser(a, full),
-    ...autorunFindings(ctx.autoruns || []),
-    ...accounts(a, full),
-    ...sharing(a),
+    ...area('protection', () => protection(a, env, now)),
+    ...area('remote', () => remote(a, full)),
+    ...area('keylogger', () => keylogger(a, full)),
+    ...area('network', () => internet(a, full)),
+    ...area('browser', () => browser(a, full)),
+    ...area('startup', () => autorunFindings(ctx.autoruns || [])),
+    ...area('accounts', () => accounts(a, full)),
+    ...area('sharing', () => sharing(a)),
   ];
   // A failed collector section is reported, never silently treated as "safe".
   const failed = Object.entries(a).filter(([, v]) => sectionError(v)).map(([k, v]) => `${k}: ${sectionError(v)}`);
@@ -685,4 +715,4 @@ function summarize(findings) {
   return { counts, status, categories: CATEGORIES };
 }
 
-module.exports = { analyzeAudit, summarize, auditFiles, exclusionRisk };
+module.exports = { analyzeAudit, summarize, auditFiles, exclusionRisk, crashFinding };

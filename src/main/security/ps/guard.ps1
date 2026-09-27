@@ -18,13 +18,13 @@ Section 'consent' {
 
 Section 'connections' {
   $procs = @{}
-  foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) { $procs[[int]$p.Id] = $p }
+  foreach ($proc in @(Get-Process -ErrorAction SilentlyContinue)) { $procs[[int]$proc.Id] = $proc }
   @(Get-NetTCPConnection -ErrorAction Stop | Where-Object { ([string]$_.State -eq 'Listen') -or ([string]$_.State -eq 'Established') } | ForEach-Object {
-    $p = $procs[[int]$_.OwningProcess]
+    $proc = $procs[[int]$_.OwningProcess]
     [ordered]@{
       state = [string]$_.State; localAddress = [string]$_.LocalAddress; localPort = [int]$_.LocalPort
       remoteAddress = [string]$_.RemoteAddress; remotePort = [int]$_.RemotePort; pid = [int]$_.OwningProcess
-      name = [string]$p.ProcessName; path = [string]$p.Path
+      name = [string]$proc.ProcessName; path = [string]$proc.Path
     }
   })
 }

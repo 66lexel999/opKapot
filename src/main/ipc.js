@@ -15,12 +15,14 @@ const registry = require('./lib/registry');
 const { sleep } = require('./services/programs/common');
 const { SecurityService } = require('./security/service');
 const { registerSecurityIpc } = require('./security/ipc');
+const { GameService } = require('./game/service');
+const { registerGameIpc } = require('./game/ipc');
 
 const isWin = process.platform === 'win32';
 
 const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === 'string') : []);
 
-function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {} }) {
+function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {}, onGameModeChanged = () => {} }) {
   const state = createState(app.getPath('userData'));
   const demoProvider = demo ? createDemoProvider() : null;
   const trash = (p) => shell.trashItem(p);
@@ -82,6 +84,22 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {} }) {
     });
   }
   registerSecurityIpc({ handle, security, state, send, onGuardSettingsChanged });
+
+  const game = new GameService({
+    demo,
+    userDataDir: demo ? path.join(app.getPath('userData'), 'demo') : app.getPath('userData'),
+    runAction: (action) => security.runAction(action),
+    notify,
+    broadcast: (status) => {
+      send('game:status', status);
+      onGameModeChanged(status);
+    },
+    // The Guard checks less often while you play, so it never costs frames.
+    onModeChange: (on) => security.setGameMode(on),
+    addHistory: (entry) => state.addHistory(entry),
+    selfPaths: [process.execPath, process.env.PORTABLE_EXECUTABLE_FILE].filter(Boolean),
+  });
+  registerGameIpc({ handle, game, send });
 
   // ---------------------------------------------------------------- app ---
   handle('app:info', () => ({
@@ -353,6 +371,14 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {} }) {
   });
   handle('files:reveal', (p) => typeof p === 'string' && shell.showItemInFolder(p));
   handle('files:open', (p) => (typeof p === 'string' ? shell.openPath(p) : null));
+  handle('files:pick-exe', async () => {
+    const res = await dialog.showOpenDialog(getWindow(), {
+      title: 'Choose the game\'s program file',
+      properties: ['openFile'],
+      filters: [{ name: 'Programs', extensions: ['exe'] }],
+    });
+    return res.canceled ? null : res.filePaths[0];
+  });
   handle('files:pick-folder', async (defaultPath) => {
     const res = await dialog.showOpenDialog(getWindow(), {
       title: 'Choose a folder to scan',
@@ -372,7 +398,7 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {} }) {
     return result;
   });
 
-  return { state, security };
+  return { state, security, game };
 }
 
 module.exports = { registerIpc };

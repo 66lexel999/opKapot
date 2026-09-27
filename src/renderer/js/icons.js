@@ -69,6 +69,17 @@ const PATHS = {
   eye: '<path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
   toggleOn: '<rect x="2" y="6" width="20" height="12" rx="6"/><circle cx="16" cy="12" r="3.5" fill="currentColor"/>',
+  gamepad: '<path d="M6.5 7.5h11a4 4 0 0 1 3.9 3.1l1 4.6a2.6 2.6 0 0 1-4.4 2.3L16.2 16H7.8L6 17.5a2.6 2.6 0 0 1-4.4-2.3l1-4.6a4 4 0 0 1 3.9-3.1z"/><path d="M7.5 10.5v3.2M5.9 12.1h3.2"/><circle cx="15.6" cy="11" r="1" fill="currentColor" stroke="none"/><circle cx="17.8" cy="13.2" r="1" fill="currentColor" stroke="none"/>',
+  gauge: '<path d="M4 17.5a8.6 8.6 0 1 1 16 0"/><path d="M12 13.5l4.2-4.2"/><circle cx="12" cy="13.5" r="1.5" fill="currentColor" stroke="none"/>',
+  wifi: '<path d="M2.5 9a14 14 0 0 1 19 0"/><path d="M5.6 12.3a9.5 9.5 0 0 1 12.8 0"/><path d="M8.7 15.5a5 5 0 0 1 6.6 0"/><circle cx="12" cy="18.8" r="1.2" fill="currentColor" stroke="none"/>',
+  cable: '<rect x="6" y="3" width="12" height="10" rx="1.5"/><path d="M9.5 3v3M12 3v3M14.5 3v3M9 13v4h6v-4M12 17v4"/>',
+  router: '<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M10.5 16.5h.01"/><path d="M16.5 13V9.5"/><path d="M13.6 7.4a4 4 0 0 1 5.8 0M11.8 5.2a6.8 6.8 0 0 1 9.4 0"/>',
+  server: '<rect x="4" y="3.5" width="16" height="7" rx="1.8"/><rect x="4" y="13.5" width="16" height="7" rx="1.8"/><path d="M8 7h.01M8 17h.01M12 7h4M12 17h4"/>',
+  monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M9 20h6M12 16v4"/>',
+  cpu: '<rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/>',
+  power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
+  arrowDown: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  swap: '<path d="M7 4L3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7"/>',
 };
 
 export function icon(name, { size = 20, className = '', title = '' } = {}) {

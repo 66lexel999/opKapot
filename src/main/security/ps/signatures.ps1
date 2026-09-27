@@ -1,9 +1,9 @@
 # Digital-signature (Authenticode or catalog) status for a list of files in $P.paths.
 
 $out = [ordered]@{}
-foreach ($p in @($P.paths)) {
-  if (-not $p) { continue }
-  $key = [string]$p
+foreach ($file in @($P.paths)) {
+  if (-not $file) { continue }
+  $key = [string]$file
   try {
     if (-not (Test-Path -LiteralPath $key -PathType Leaf)) { $out[$key] = [ordered]@{ exists = $false }; continue }
     $s = Get-AuthenticodeSignature -LiteralPath $key -ErrorAction Stop

@@ -257,6 +257,14 @@ test('collector scripts are plain ASCII', () => {
   }
 });
 
+test('collector scripts never reuse the names $r or $p', () => {
+  // PowerShell variable names ignore case: $r would overwrite the $R results and $p the $P parameters.
+  for (const f of fs.readdirSync(PS_DIR).filter((n) => n.endsWith('.ps1'))) {
+    const text = fs.readFileSync(path.join(PS_DIR, f), 'utf8');
+    assert.doesNotMatch(text, /\$[rp]\b(?![\[.])|\$r\.|\$p\./, `${f} uses $r or $p`);
+  }
+});
+
 test('script parameters are passed as base64 JSON, never pasted into code', () => {
   const script = buildScript('status', { path: "C:\\x'; Remove-Item C:\\ -Recurse; '" });
   assert.ok(!script.includes('Remove-Item C:\\'));

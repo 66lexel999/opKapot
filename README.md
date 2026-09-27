@@ -1,12 +1,16 @@
-# opKapot: Uninstaller & Security
+# opKapot: Security, Uninstaller & Game Booster
 
-An advanced uninstaller, disk cleaner and PC security suite for Windows. It removes programs and Windows apps in bulk, wipes their leftovers, finds large and duplicate files and cleans junk. It also scans for viruses and checks whether anyone is spying on, controlling or getting into your PC.
+An all-in-one Windows app with three sections in the sidebar:
+
+- **Security** (green): virus scans, a Hack Check that finds out whether anyone is spying on or getting into your PC, live network and camera/mic monitoring.
+- **Uninstaller**: removes programs and Windows apps in bulk with their leftovers, finds large and duplicate files and cleans junk.
+- **Game Booster**: finds out why your ping is high or unstable, and a one-button **Game Mode** that closes everything your game doesn't need (made with EA SPORTS FC 27 in mind).
 
 ![Security Center](docs/screenshots/security-center.png)
 
 ## Security
 
-Open **Security** in the sidebar. **Smart Scan** runs a Hack Check and a quick virus scan together.
+**Smart Scan** runs a Hack Check and a quick virus scan together.
 
 ### Virus Scan
 - **Two engines at once.** opKapot drives **Microsoft Defender's** engine, which is built into Windows, updated several times a day and scores near the top in independent AV-TEST and AV-Comparatives tests. At the same time it runs **its own checks** for the tricks malware uses:
@@ -33,7 +37,7 @@ A read-only audit that explains every finding in plain words. Anything it can fi
 | **Accounts & sharing** | New admin accounts, the Guest account, shared folders, who is connected to your shares, SMBv1 |
 
 ### Network Monitor
-A live table of every connection and open port, showing **which program owns it**, whether it's **incoming** (another device connected to you) or outgoing, and where the other side is. Filter by Internet, Incoming, Listening or Flagged, look up an IP address, **block a program** in Windows Firewall, or end it.
+A live table of every connection and open port, showing **which program owns it**, whether it's **incoming** (another device connected to you) or outgoing, and where the other side is. Filter by Internet, Incoming, Listening or Flagged, look up an IP address, **block a program** in Windows Firewall, or end it. The **Blocked** tab lists every program you've blocked, with an **Unblock** button.
 
 ### Startup Items, Browser Extensions, Camera & Mic
 - **Startup Items**: everything that starts with Windows, with publisher, signature and risk. Disable, enable or remove items.
@@ -56,6 +60,36 @@ opKapot is honest about its limits. Microsoft Defender's engine does the signatu
 | ![Hack Check](docs/screenshots/hack-check.png) | ![Virus scan](docs/screenshots/virus-scan.png) |
 | ![Network monitor](docs/screenshots/network-monitor.png) | ![Startup items](docs/screenshots/startup-items.png) |
 | ![Browser extensions](docs/screenshots/browser-extensions.png) | ![Camera and mic](docs/screenshots/camera-mic.png) |
+| ![Blocked programs](docs/screenshots/blocked-programs.png) | ![Security Center](docs/screenshots/security-center.png) |
+
+## Game Booster
+
+### Ping & Speed: why is my ping high or unstable?
+One test (about 30 seconds) that shows **where** the lag starts and **why**:
+
+- **Your PC → router → internet → game servers.** It pings each step at the same moment. If pings to your own router already jump around, the problem is in your home (usually Wi-Fi). If the router is steady but the internet isn't, it's your line or provider.
+- **Game-server regions.** Latency to the cloud data centres where online matches (including EA SPORTS FC) are hosted, with the closest one highlighted. While the game is running it also measures the EA servers it is connected to.
+- **Speed and "lag when busy".** Download and upload speed, plus how much your ping rises while the line is downloading (bufferbloat, graded A+ to F), the most common cause of lag spikes when someone else is streaming or a game updates.
+- **Diagnosis in plain words.** Weak Wi-Fi signal, the crowded 2.4 GHz band, a 100 Mbps cable, something already downloading (Steam, OneDrive, torrents, Windows Update), a VPN detour, distance to servers, each with what to do.
+- **Fix tools:** clear the DNS cache, reset Windows network settings, open Wi-Fi settings, or jump to Game Mode.
+
+### Game Mode: one button
+Pick your game (EA SPORTS FC 27 is preset; games from Steam, the EA app and Epic are detected, or pick a running program or browse for the .exe) and press the button. Game Mode:
+
+- **keeps** your game, the **launchers it needs** (EA app, Steam, Epic, Ubisoft Connect, Battle.net, Riot, Xbox app: you choose), anti-cheat, graphics/audio/controller software, antivirus and Windows itself. Voice chat (Discord) is kept unless you tick it;
+- **closes** the other apps you tick (browsers, sync apps, launchers you don't need, torrent clients…) and shows how much memory that frees;
+- **pauses** background services such as Windows Update, Delivery Optimization, search indexing and app updaters;
+- switches to the **High performance** power plan and gives the game **high priority**;
+- slows opKapot's own Guard checks so they never cost frames.
+
+Press the button again, close the game, or quit opKapot and everything is put back: services restart, the power plan is restored and the apps it closed reopen. Game Mode can also be toggled from the tray icon.
+
+| | |
+|---|---|
+| ![Game Mode](docs/screenshots/game-mode.png) | ![Game Mode on](docs/screenshots/game-mode-on.png) |
+| ![Ping and speed](docs/screenshots/ping-speed.png) | ![Lag diagnosis](docs/screenshots/ping-diagnosis.png) |
+
+**About ping:** no app can lower the physical distance to a server or fix a bad line. What Game Mode and the diagnosis *can* do is remove everything on your side that competes with the game (downloads, updates, background apps), which is what causes most spikes.
 
 ## Uninstaller & cleaner
 
@@ -109,13 +143,13 @@ Deleting things is serious, so several guards are built in:
 - **Leftovers never overlap other programs.** A folder is not offered if it is, or contains, another installed program's folder. A publisher folder is only offered when no other installed program comes from that publisher.
 - **Registry.** Shared keys (`Microsoft`, `Classes`, `Policies`, `Windows`, …) can never be deleted. Every deleted key is backed up to `%APPDATA%\opKapot Uninstaller\registry-backups`.
 - Files go to the **Recycle Bin** by default, and every delete asks for confirmation first.
-- **Security checks are read-only.** Only a separate, fixed set of actions can change anything (turn a protection on, disable a startup item, remove a policy, block a program), and each one asks first. Registry changes are exported to a `.reg` backup before they happen. The PowerShell scripts are passed to PowerShell in memory, not written to a temp file that something else could swap.
+- **Security checks are read-only.** Only a separate, fixed set of actions can change anything (turn a protection on, disable a startup item, remove a policy, block or unblock a program, Game Mode), and each one asks first. Game Mode only closes programs whose file still matches what you saw, never anything inside `C:\Windows`, and restores services and the power plan when it turns off. Registry changes are exported to a `.reg` backup before they happen. The PowerShell scripts are passed to PowerShell in memory, not written to a temp file that something else could swap.
 - **Quarantined files** are scrambled on disk so they can't run, and restored byte for byte if you change your mind.
 
 ## Download and run
 
 ### Windows (recommended)
-1. Download **[opKapot-Uninstaller-Portable-1.1.0.exe](release/opKapot-Uninstaller-Portable-1.1.0.exe)** (open the link, then click **Download raw file**). It's portable, so there's nothing to install.
+1. Download **[opKapot-Uninstaller-Portable-1.2.0.exe](release/opKapot-Uninstaller-Portable-1.2.0.exe)** (open the link, then click **Download raw file**). It's portable, so there's nothing to install.
 2. Double-click it. Windows SmartScreen may say *"Windows protected your PC"* because the app isn't code-signed: click **More info → Run anyway**.
 3. Click **Yes** when Windows asks for administrator permission. Uninstalling programs, cleaning Windows folders and the security checks need it.
 
@@ -137,7 +171,7 @@ npm run dist:win   # build the Windows installer + portable exe into dist/ (run 
 ```
 
 ### Demo mode
-`npm run demo` (or `--demo`) fills **Programs**, **Windows Apps** and every **Security** view with a sample PC (including a few planted problems) and only simulates uninstalls and fixes, so you can try the UI safely on any OS. **Files** and **Junk Cleaner** still work on your real disk in demo mode. They always ask before deleting anything.
+`npm run demo` (or `--demo`) fills **Programs**, **Windows Apps**, every **Security** view and **Game Booster** with a sample PC (including a few planted problems) and only simulates uninstalls and fixes, so you can try the UI safely on any OS. **Files** and **Junk Cleaner** still work on your real disk in demo mode. They always ask before deleting anything.
 
 ## Platform support
 - **Windows 10/11**: full feature set. Programs are read from the registry (64-bit, 32-bit and per-user). Security features need Windows.
@@ -159,8 +193,9 @@ src/main/                 Electron main process
   security/service.js     virus scan, Hack Check, network, startup, quarantine, VirusTotal, Real-time Guard
   workers/scan-worker.js  file scans, duplicate hashing, folder sizes, junk scan/clean, malware heuristics (worker thread)
   workers/heuristics.js   opKapot's own detection rules
+  game/                   Ping & Speed (net.js, probe.js) and Game Mode (plan.js, games.js, service.js)
 src/renderer/             UI (plain ES modules, no framework)
   js/components/table.js  virtualised, sortable, multi-select table
-  js/views/               one module per sidebar section (js/views/security/ for Security)
+  js/views/               one module per sidebar page (security/ and game/ for those sections)
 test/                     node:test unit tests
 ```

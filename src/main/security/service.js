@@ -5,14 +5,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { runPs } = require('./runner');
 const demoData = require('./demo');
-const { analyzeAudit, summarize, auditFiles } = require('./analyze/audit');
+const { analyzeAudit, summarize, auditFiles, crashFinding } = require('./analyze/audit');
 const { analyzeConnections, matchRemoteTool } = require('./analyze/network');
 const { analyzeAutoruns, autorunFiles } = require('./analyze/autoruns');
 const { scanExtensions } = require('./analyze/extensions');
 const { analyzePrivacy } = require('./analyze/privacy');
 const { mapDefender } = require('./analyze/defender');
 const { removeHostsLines } = require('./analyze/hosts');
-const { asArray, sectionError, pathKind } = require('./analyze/common');
+const { asArray, asObjects, str, sectionError, pathKind } = require('./analyze/common');
 const { Quarantine } = require('./quarantine');
 const { VirusScanner } = require('./virus');
 const { Guard } = require('./guard');
@@ -47,7 +47,8 @@ class SecurityService {
     this.quarantine = new Quarantine(path.join(userDataDir, 'quarantine'));
     this.scanner = new VirusScanner({ demo: this.demo, runPs, collect: (n) => this.collect(n), env: this.env });
     this.guard = new Guard({ collect: () => this.collect('guard', {}, { timeout: 60_000 }), onAlerts: (a) => this.onAlerts(a) });
-    this.demoState = { autorunsDisabled: new Set() };
+    this.demoState = { autorunsDisabled: new Set(), blocked: ['C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'] };
+    this.blockedIndex = new Map();
   }
 
   get supported() {
@@ -124,7 +125,7 @@ class SecurityService {
     const timeout = /defender-(update|remove)/.test(action.type) ? 900_000 : 180_000;
     const res = await runPs('actions', { ...action, backupDir: this.backupDir }, { timeout });
     const r = Array.isArray(res) ? res.filter((x) => x && typeof x.ok === 'boolean').pop() : res;
-    return { ok: !!r?.ok, message: r?.message || (r?.ok ? 'Done.' : 'It didn\'t work.') };
+    return { ok: !!r?.ok, message: r?.message || (r?.ok ? 'Done.' : 'It didn\'t work.'), data: r?.data };
   }
 
   hostsPath() {
@@ -228,25 +229,39 @@ class SecurityService {
       soft(this.collect('status', {}, { timeout: 90_000 })),
       soft(this.collect('upnp', {}, { timeout: 25_000 })),
     ]);
+    // Every step falls back to "nothing found" and reports itself, so one
+    // surprise in Windows' data can't stop the whole check.
+    const problems = [];
+    const step = (category, fallback, run) => {
+      try {
+        return run();
+      } catch (err) {
+        problems.push(crashFinding(category, err));
+        return fallback;
+      }
+    };
     onProgress({ step: 2, text: 'Checking browsers and the hosts file…' });
-    const extensions = this.extensionsList();
-    const hosts = this.readHosts();
+    const extensions = step('browser', [], () => this.extensionsList());
+    const hosts = step('network', { text: '', path: this.hostsPath() }, () => this.readHosts());
     onProgress({ step: 3, text: 'Checking digital signatures…' });
     const files = [
-      ...auditFiles(audit, env),
-      ...autorunFiles(autorunsRaw, env),
-      ...Object.values(networkRaw?.processes || {}).map((p) => p?.path).filter(Boolean),
+      ...step('protection', [], () => auditFiles(audit, env)),
+      ...step('startup', [], () => autorunFiles(autorunsRaw, env)),
+      ...step('remote', [], () => Object.values(networkRaw?.processes || {}).map((p) => (typeof p?.path === 'string' ? p.path : '')).filter(Boolean)),
     ];
-    const sigs = await this.signatures(files);
+    let sigs = {};
+    try {
+      sigs = await this.signatures(files);
+    } catch { /* unsigned-file checks are skipped */ }
     onProgress({ step: 4, text: 'Analyzing…' });
-    const connections = analyzeConnections(networkRaw, { sigs, env });
-    const autoruns = analyzeAutoruns(autorunsRaw, { sigs, env });
-    const privacy = analyzePrivacy(statusRaw?.consent);
+    const connections = step('remote', [], () => analyzeConnections(networkRaw, { sigs, env }));
+    const autoruns = step('startup', [], () => analyzeAutoruns(autorunsRaw, { sigs, env }));
+    const privacy = step('keylogger', [], () => analyzePrivacy(statusRaw?.consent));
     const ignored = new Set(this.store.get().ignored);
-    const findings = analyzeAudit({
+    const findings = [...analyzeAudit({
       audit, connections, autoruns, extensions, privacy, sigs, env,
       hostsText: hosts.text, hostsPath: hosts.path, upnp: upnpRaw?.upnp, localIps: asArray(networkRaw?.localIps),
-    }).map((f) => ({ ...f, ignored: ignored.has(f.id) }));
+    }), ...problems].map((f) => ({ ...f, ignored: ignored.has(f.id) }));
     if (sectionError(autorunsRaw)) findings.push({ id: 'audit:autoruns-failed', category: 'startup', severity: 'notice', title: 'Startup items could not be checked', summary: autorunsRaw.error, evidence: [] });
 
     const token = `audit-${Date.now()}`;
@@ -298,9 +313,56 @@ class SecurityService {
     if (kind === 'kill') return this.runAction({ type: 'kill-process', pid: row.pid });
     if (kind === 'block') {
       if (!row.path) throw new Error('The program\'s file is unknown, so it can\'t be blocked.');
-      return this.runAction({ type: 'block-program', path: row.path });
+      const res = await this.runAction({ type: 'block-program', path: row.path });
+      if (res.ok && this.demo && !this.demoState.blocked.includes(row.path)) this.demoState.blocked.push(row.path);
+      return res;
     }
     throw new Error('Unknown action.');
+  }
+
+  /** Programs opKapot has blocked in Windows Firewall, one row per program. */
+  async blocked() {
+    let rules;
+    if (this.demo) {
+      rules = this.demoState.blocked.flatMap((p, i) => ['Inbound', 'Outbound'].map((direction) => ({ name: `demo-${i}-${direction}`, direction, program: p, enabled: 'True' })));
+    } else {
+      const raw = await this.collect('firewall', {}, { timeout: 60_000 });
+      if (sectionError(raw.blocked)) throw new Error(`Windows Firewall could not be read: ${sectionError(raw.blocked)}`);
+      rules = asObjects(raw.blocked);
+    }
+    const byProgram = new Map();
+    for (const r of rules) {
+      const program = str(r.program) && str(r.program) !== 'Any' ? str(r.program) : '';
+      const id = (program || str(r.displayName) || str(r.name)).toLowerCase();
+      if (!byProgram.has(id)) {
+        byProgram.set(id, {
+          id,
+          path: program,
+          name: program ? path.win32.basename(program) : str(r.displayName).replace(/^opKapot block - /, '') || 'Unknown program',
+          rules: [],
+          inbound: false,
+          outbound: false,
+        });
+      }
+      const b = byProgram.get(id);
+      b.rules.push(str(r.name));
+      if (/^in/i.test(str(r.direction))) b.inbound = true;
+      if (/^out/i.test(str(r.direction))) b.outbound = true;
+    }
+    const list = [...byProgram.values()].sort((a, b) => a.name.localeCompare(b.name));
+    this.blockedIndex = new Map(list.map((b) => [b.id, b]));
+    return list;
+  }
+
+  async unblock(id) {
+    const b = this.blockedIndex.get(id);
+    if (!b) throw new Error('That block is already gone. Refresh the list.');
+    const res = await this.runAction({ type: 'unblock-program', rules: b.rules.filter(Boolean) });
+    if (res.ok) {
+      if (this.demo) this.demoState.blocked = this.demoState.blocked.filter((p) => p.toLowerCase() !== b.path.toLowerCase());
+      this.addHistory({ type: 'security', title: `Unblocked ${b.name}`, detail: 'Internet access restored', bytes: 0 });
+    }
+    return res;
   }
 
   // ------------------------------------------------------------ Startup ---
@@ -434,10 +496,18 @@ class SecurityService {
   applyGuardSettings() {
     const s = this.getSettings();
     if (this.supported && s.guardEnabled) {
-      if (!this.guard.enabled || this.guard.intervalMs !== s.guardIntervalSec * 1000) this.guard.start(s.guardIntervalSec * 1000);
+      const ms = Math.max(10, Number(s.guardIntervalSec) || 30) * 1000;
+      const interval = this.gameMode ? Math.max(ms, 120_000) : ms;
+      if (!this.guard.enabled || this.guard.intervalMs !== interval) this.guard.start(interval);
     } else {
       this.guard.stop();
     }
+  }
+
+  /** While Game Mode is on the Guard checks every 2 minutes instead of every 30 seconds. */
+  setGameMode(on) {
+    this.gameMode = !!on;
+    this.applyGuardSettings();
   }
 
   onAlerts(alerts) {

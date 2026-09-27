@@ -178,8 +178,8 @@ function chromiumExtensions(browser, root, isProfileDir) {
     const profileName = prefs.profile?.name || profile || 'Default';
     const extRoot = path.join(profileDir, 'Extensions');
     const ids = new Set([...listDirs(extRoot), ...Object.keys(settings).filter((id) => settings[id]?.path && path.isAbsolute(settings[id].path))]);
-    for (const id of ids) {
-      const s = settings[id] || {};
+    for (const id of ids) try {
+      const s = settings[id] && typeof settings[id] === 'object' ? settings[id] : {};
       const source = LOCATION[s.location] || (s.from_webstore ? 'store' : 'unknown');
       if (source === 'builtin') continue;
       let dir = null;
@@ -189,9 +189,10 @@ function chromiumExtensions(browser, root, isProfileDir) {
       if (!dir) continue;
       const manifest = readJson(path.join(dir, 'manifest.json'));
       if (!manifest || manifest.theme) continue;
-      const permissions = [...(manifest.permissions || []), ...(manifest.optional_permissions || [])].filter((p) => typeof p === 'string');
-      const hosts = [...(manifest.host_permissions || []), ...permissions.filter((p) => p.includes('://') || p === '<all_urls>')];
-      const contentMatches = (manifest.content_scripts || []).flatMap((c) => c.matches || []);
+      const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+      const permissions = [...list(manifest.permissions), ...list(manifest.optional_permissions)];
+      const hosts = [...list(manifest.host_permissions), ...permissions.filter((p) => p.includes('://') || p === '<all_urls>')];
+      const contentMatches = (Array.isArray(manifest.content_scripts) ? manifest.content_scripts : []).flatMap((c) => list(c?.matches));
       const reasons = s.disable_reasons;
       const enabled = s.state === 0 ? false : !(Array.isArray(reasons) ? reasons.length : Number(reasons || 0));
       const assessment = assess(permissions, hosts, contentMatches);
@@ -200,9 +201,9 @@ function chromiumExtensions(browser, root, isProfileDir) {
         extensionId: id,
         browser,
         profile: profileName,
-        name: localize(manifest.name, dir, manifest) || id,
-        description: localize(manifest.description, dir, manifest) || '',
-        version: manifest.version || '',
+        name: String(localize(manifest.name, dir, manifest) || id),
+        description: String(localize(manifest.description, dir, manifest) || ''),
+        version: String(manifest.version || ''),
         source,
         sourceLabel: SOURCE_LABEL[source],
         enabled,
@@ -215,7 +216,7 @@ function chromiumExtensions(browser, root, isProfileDir) {
         storeUrl: source === 'store' ? (browser === 'Microsoft Edge'
           ? `https://microsoftedge.microsoft.com/addons/detail/${id}` : `https://chromewebstore.google.com/detail/${id}`) : null,
       });
-    }
+    } catch { /* skip an extension with an unreadable manifest */ }
   }
   return out;
 }
@@ -224,10 +225,11 @@ function firefoxExtensions(root) {
   const out = [];
   for (const profile of listDirs(root)) {
     const data = readJson(path.join(root, profile, 'extensions.json'));
-    for (const a of data?.addons || []) {
-      if (a.type !== 'extension' || !/^app-profile$|^app-global$/.test(a.location || '')) continue;
-      const perms = a.userPermissions?.permissions || [];
-      const origins = a.userPermissions?.origins || [];
+    for (const a of Array.isArray(data?.addons) ? data.addons : []) try {
+      if (!a || a.type !== 'extension' || !/^app-profile$|^app-global$/.test(a.location || '')) continue;
+      const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+      const perms = strings(a.userPermissions?.permissions);
+      const origins = strings(a.userPermissions?.origins);
       const assessment = assess(perms, origins, []);
       const source = a.signedState >= 2 || a.signedState === undefined ? 'store' : 'sideloaded';
       out.push({
@@ -249,7 +251,7 @@ function firefoxExtensions(root) {
         icon: null,
         storeUrl: `https://addons.mozilla.org/firefox/addon/${encodeURIComponent(a.id)}/`,
       });
-    }
+    } catch { /* skip an unreadable add-on */ }
   }
   return out;
 }
@@ -258,8 +260,14 @@ function firefoxExtensions(root) {
 function scanExtensions({ platform, env, home } = {}) {
   const roots = browserRoots(platform, env, home);
   const list = [];
-  for (const [browser, root, isProfileDir] of roots.chromium) list.push(...chromiumExtensions(browser, root, isProfileDir));
-  list.push(...firefoxExtensions(roots.firefox));
+  for (const [browser, root, isProfileDir] of roots.chromium) {
+    try {
+      list.push(...chromiumExtensions(browser, root, isProfileDir));
+    } catch { /* one browser's odd profile shouldn't hide the others */ }
+  }
+  try {
+    list.push(...firefoxExtensions(roots.firefox));
+  } catch { /* ignore */ }
   return list;
 }
 
@@ -267,7 +275,7 @@ function scanExtensions({ platform, env, home } = {}) {
 function extensionFindings(extensions) {
   const out = [];
   for (const e of extensions) {
-    if (e.risk !== 'danger' && e.risk !== 'warning') continue;
+    if (!e || (e.risk !== 'danger' && e.risk !== 'warning')) continue;
     out.push(finding({
       id: `ext:${e.id}`,
       category: 'browser',
@@ -276,7 +284,7 @@ function extensionFindings(extensions) {
       summary: e.source === 'policy'
         ? 'Browser hijackers force-install extensions with policies so you can\'t remove them.'
         : 'Extensions that don\'t come from the official store are a common way to spy on browsing and steal logins.',
-      evidence: [...e.capabilities.map((c) => `• ${c}`), `Folder: ${e.folder}`],
+      evidence: [...(Array.isArray(e.capabilities) ? e.capabilities : []).map((c) => `• ${c}`), `Folder: ${e.folder}`],
       advice: `If you didn't add it yourself, remove it from ${e.browser}'s extensions page and scan your PC.`,
     }));
   }

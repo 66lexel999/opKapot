@@ -18,12 +18,40 @@ const CATEGORIES = {
   sharing: 'Files & sharing',
 };
 
+/** Windows PowerShell 5.1 sometimes writes an array as {"value": [...], "Count": n}. */
+function isWrappedArray(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.value)) return false;
+  return Object.keys(value).every((k) => k === 'value' || k === 'Count');
+}
+
+/** Undo PowerShell JSON quirks throughout a parsed collector result. */
+function normalizePs(value, depth = 0) {
+  if (depth > 40 || value == null || typeof value !== 'object') return value;
+  if (isWrappedArray(value)) return normalizePs(value.value, depth + 1);
+  if (Array.isArray(value)) return value.map((v) => normalizePs(v, depth + 1));
+  for (const k of Object.keys(value)) value[k] = normalizePs(value[k], depth + 1);
+  return value;
+}
+
 /** ConvertTo-Json flattens 0/1-item arrays; always get an array back. */
 function asArray(value) {
   if (value == null) return [];
+  if (isWrappedArray(value)) return asArray(value.value);
   if (Array.isArray(value)) return value.filter((v) => v != null);
   if (typeof value === 'object' && Object.keys(value).length === 1 && typeof value.error === 'string') return [];
   return [value];
+}
+
+/** Array items that are real objects (skips stray strings, numbers and failed sections). */
+function asObjects(value) {
+  return asArray(value).filter((v) => typeof v === 'object' && !Array.isArray(v) && !sectionError(v));
+}
+
+/** A string, whatever the collector handed us. */
+function str(value) {
+  if (typeof value === 'string') return value;
+  if (value == null || typeof value === 'object') return '';
+  return String(value);
 }
 
 /** The error text of a collector section that failed, or null. */
@@ -202,6 +230,6 @@ function finding(fields) {
 }
 
 module.exports = {
-  P, SEVERITY_ORDER, CATEGORIES, asArray, sectionError, envGet, expandEnv, normalizeWinPath, pathKind, USER_WRITABLE, KIND_LABEL,
+  P, SEVERITY_ORDER, CATEGORIES, asArray, asObjects, str, normalizePs, isWrappedArray, sectionError, envGet, expandEnv, normalizeWinPath, pathKind, USER_WRITABLE, KIND_LABEL,
   commandTarget, commandRedFlags, sigState, signerName, isMicrosoftSigned, describeSig, classifyIp, IP_LABEL, daysAgo, finding,
 };

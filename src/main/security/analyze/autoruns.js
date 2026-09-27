@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  P, asArray, commandTarget, commandRedFlags, normalizeWinPath, pathKind, USER_WRITABLE, KIND_LABEL,
+  P, asArray, asObjects, str, commandTarget, commandRedFlags, normalizeWinPath, pathKind, USER_WRITABLE, KIND_LABEL,
   sigState, signerName, describeSig, finding,
 } = require('./common');
 
@@ -105,15 +105,17 @@ function autorunFiles(raw, env) {
 function buildEntries(raw, env) {
   const entries = [];
   const run = raw?.run || {};
-  for (const e of asArray(run.entries)) {
-    const t = commandTarget(e.command, env);
-    const bucket = e.kind === 'Run32' ? 'Run32' : 'Run';
-    const approvable = e.kind === 'Run' || e.kind === 'Run32';
+  for (const e of asObjects(run.entries)) try {
+    if (!str(e.key) || !str(e.name)) continue;
+    const kind = str(e.kind) || 'Run';
+    const t = commandTarget(str(e.command), env);
+    const bucket = kind === 'Run32' ? 'Run32' : 'Run';
+    const approvable = kind === 'Run' || kind === 'Run32';
     entries.push({
       id: `run|${e.key}|${e.name}`,
       source: 'run',
-      sourceLabel: e.kind.startsWith('Policy') ? 'Registry (policy Run)' : `Registry (${e.kind.replace('32', '')})`,
-      where: e.key.replace(/^HK(LM|CU):\\/, 'HK$1\\'),
+      sourceLabel: kind.startsWith('Policy') ? 'Registry (policy Run)' : `Registry (${kind.replace('32', '')})`,
+      where: str(e.key).replace(/^HK(LM|CU):\\/, 'HK$1\\'),
       name: e.name,
       command: e.command,
       file: t.file,
@@ -124,12 +126,14 @@ function buildEntries(raw, env) {
       actions: {
         disable: approvable ? approvedAction(e.hive, bucket, e.name, false) : null,
         enable: approvable ? approvedAction(e.hive, bucket, e.name, true) : null,
-        remove: { type: 'reg-delete-value', regKey: e.key.replace(/^(HKLM|HKCU):\\/, '$1\\'), name: e.name },
+        remove: { type: 'reg-delete-value', regKey: str(e.key).replace(/^(HKLM|HKCU):\\/, '$1\\'), name: e.name },
       },
     });
-  }
+  } catch { /* skip a malformed item */ }
 
-  for (const f of asArray(raw?.startupFolder)) {
+  for (const f of asObjects(raw?.startupFolder)) try {
+    if (!str(f.path)) continue;
+    f.name = str(f.name) || P.basename(f.path);
     const target = f.target?.target ? normalizeWinPath(f.target.target, env) : f.path;
     const command = f.target?.target ? `"${f.target.target}" ${f.target.args || ''}`.trim() : f.path;
     const t = f.target?.target ? commandTarget(command, env) : { file: f.path, host: null, payload: null, remote: false };
@@ -151,10 +155,10 @@ function buildEntries(raw, env) {
         remove: { type: 'trash-file', path: f.path },
       },
     });
-  }
+  } catch { /* skip a malformed item */ }
 
-  for (const task of asArray(raw?.tasks)) {
-    const action = asArray(task.actions).find((a) => a.exe) || asArray(task.actions)[0] || {};
+  for (const task of asObjects(raw?.tasks)) try {
+    const action = asObjects(task.actions).find((a) => str(a.exe)) || {};
     if (!action.exe) continue;
     const command = `"${action.exe}" ${action.args || ''}`.trim();
     const t = commandTarget(command, env);
@@ -180,10 +184,11 @@ function buildEntries(raw, env) {
         remove: null,
       },
     });
-  }
+  } catch { /* skip a malformed item */ }
 
-  for (const svc of asArray(raw?.services)) {
-    const t = commandTarget(svc.path, env);
+  for (const svc of asObjects(raw?.services)) try {
+    if (!str(svc.name)) continue;
+    const t = commandTarget(str(svc.path), env);
     entries.push({
       id: `service|${svc.name}`,
       source: 'service',
@@ -204,9 +209,10 @@ function buildEntries(raw, env) {
         remove: null,
       },
     });
-  }
+  } catch { /* skip a malformed item */ }
 
-  for (const drv of asArray(raw?.drivers)) {
+  for (const drv of asObjects(raw?.drivers)) try {
+    if (!str(drv.name)) continue;
     const file = normalizeWinPath(drv.path, env);
     entries.push({
       id: `driver|${drv.name}`,
@@ -220,12 +226,13 @@ function buildEntries(raw, env) {
       running: drv.state === 'Running',
       actions: { disable: null, enable: null, remove: null },
     });
-  }
+  } catch { /* skip a malformed item */ }
 
   const wmi = raw?.wmi || {};
-  for (const c of asArray(wmi.commandConsumers)) {
-    if (WMI_OK.some((w) => w.name.test(c.name) && w.command.test(c.command))) continue;
-    const t = commandTarget(c.command || c.exe, env);
+  for (const c of asObjects(wmi.commandConsumers)) try {
+    if (!str(c.name)) continue;
+    if (WMI_OK.some((w) => w.name.test(str(c.name)) && w.command.test(str(c.command)))) continue;
+    const t = commandTarget(str(c.command) || str(c.exe), env);
     entries.push({
       id: `wmi|${c.name}`,
       source: 'wmi',
@@ -240,25 +247,33 @@ function buildEntries(raw, env) {
       enabled: true,
       actions: { disable: null, enable: null, remove: { type: 'wmi-remove', consumer: c.name, consumerClass: 'CommandLineEventConsumer' } },
     });
-  }
-  for (const c of asArray(wmi.scriptConsumers)) {
+  } catch { /* skip a malformed item */ }
+  for (const c of asObjects(wmi.scriptConsumers)) try {
     entries.push({
       id: `wmi|${c.name}`,
       source: 'wmi',
       sourceLabel: 'WMI event script',
       where: 'root\\subscription',
       name: c.name,
-      command: (c.text || c.file || '').slice(0, 400),
-      file: c.file ? normalizeWinPath(c.file, env) : '',
+      command: (str(c.text) || str(c.file)).slice(0, 400),
+      file: str(c.file) ? normalizeWinPath(c.file, env) : '',
       enabled: true,
       actions: { disable: null, enable: null, remove: { type: 'wmi-remove', consumer: c.name, consumerClass: 'ActiveScriptEventConsumer' } },
     });
-  }
+  } catch { /* skip a malformed item */ }
   return entries;
 }
 
 function analyzeAutoruns(raw, { sigs = {}, env = {} } = {}) {
-  return buildEntries(raw, env).map((e) => rate(e, sigs[e.file], env));
+  const out = [];
+  for (const e of buildEntries(raw, env)) {
+    try {
+      out.push(rate(e, sigs[e.file], env));
+    } catch {
+      out.push({ ...e, flags: [], risk: 'ok', signature: 'unknown', publisher: '', signatureText: 'Not checked' });
+    }
+  }
+  return out;
 }
 
 /** Hack Check findings for risky startup entries. */

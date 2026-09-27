@@ -23,6 +23,8 @@ function registerSecurityIpc({ handle, security, state, send, onGuardSettingsCha
   handle('security:ignore', (id, on) => security.setIgnored(String(id), !!on));
   handle('security:network', () => security.network());
   handle('security:network-action', (rowId, kind) => security.networkAction(String(rowId), String(kind)));
+  handle('security:blocked', () => security.blocked());
+  handle('security:unblock', (id) => security.unblock(String(id)));
   handle('security:autoruns', () => security.autoruns());
   handle('security:autorun-action', (id, which) => security.autorunAction(String(id), String(which)));
   handle('security:extensions', () => security.extensions());

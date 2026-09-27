@@ -39,7 +39,7 @@ Section 'programs' {
 
 Section 'defender' {
   $s = Get-MpComputerStatus -ErrorAction Stop
-  $p = Get-MpPreference -ErrorAction SilentlyContinue
+  $mp = Get-MpPreference -ErrorAction SilentlyContinue
   [ordered]@{
     serviceEnabled     = [bool]$s.AMServiceEnabled
     antivirusEnabled   = [bool]$s.AntivirusEnabled
@@ -52,16 +52,16 @@ Section 'defender' {
     signatureUpdated   = Ms $s.AntivirusSignatureLastUpdated
     quickScanEnd       = Ms $s.QuickScanEndTime
     fullScanEnd        = Ms $s.FullScanEndTime
-    exclusionPath      = @($p.ExclusionPath | Where-Object { $_ } | ForEach-Object { [string]$_ })
-    exclusionExtension = @($p.ExclusionExtension | Where-Object { $_ } | ForEach-Object { [string]$_ })
-    exclusionProcess   = @($p.ExclusionProcess | Where-Object { $_ } | ForEach-Object { [string]$_ })
-    disableRealtime    = [bool]$p.DisableRealtimeMonitoring
-    disableBehavior    = [bool]$p.DisableBehaviorMonitoring
-    disableIoav        = [bool]$p.DisableIOAVProtection
-    disableScript      = [bool]$p.DisableScriptScanning
-    pua                = [int]$p.PUAProtection
-    cfa                = [int]$p.EnableControlledFolderAccess
-    maps               = [int]$p.MAPSReporting
+    exclusionPath      = @($mp.ExclusionPath | Where-Object { $_ } | ForEach-Object { [string]$_ })
+    exclusionExtension = @($mp.ExclusionExtension | Where-Object { $_ } | ForEach-Object { [string]$_ })
+    exclusionProcess   = @($mp.ExclusionProcess | Where-Object { $_ } | ForEach-Object { [string]$_ })
+    disableRealtime    = [bool]$mp.DisableRealtimeMonitoring
+    disableBehavior    = [bool]$mp.DisableBehaviorMonitoring
+    disableIoav        = [bool]$mp.DisableIOAVProtection
+    disableScript      = [bool]$mp.DisableScriptScanning
+    pua                = [int]$mp.PUAProtection
+    cfa                = [int]$mp.EnableControlledFolderAccess
+    maps               = [int]$mp.MAPSReporting
   }
 }
 
@@ -248,8 +248,8 @@ Section 'browserPolicies' {
   $roots = 'SOFTWARE\Policies\Google\Chrome', 'SOFTWARE\Policies\BraveSoftware\Brave', 'SOFTWARE\Policies\Microsoft\Edge',
     'SOFTWARE\Policies\Chromium', 'SOFTWARE\Policies\Mozilla\Firefox', 'SOFTWARE\Policies\Opera Software\Opera', 'SOFTWARE\Policies\Vivaldi'
   @(foreach ($hive in 'HKLM:', 'HKCU:') {
-    foreach ($p in $roots) {
-      $path = "$hive\$p"
+    foreach ($polRoot in $roots) {
+      $path = "$hive\$polRoot"
       if (Test-Path -LiteralPath $path) {
         [ordered]@{
           key = $path
