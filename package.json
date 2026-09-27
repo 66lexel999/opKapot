@@ -1,0 +1,68 @@
+{
+  "name": "opkapot-uninstaller",
+  "productName": "opKapot Uninstaller",
+  "version": "1.0.0",
+  "description": "Advanced uninstaller: batch-remove programs and Windows apps, wipe leftovers, find large and duplicate files, and clean junk.",
+  "main": "src/main/main.js",
+  "author": "opKapot",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "demo": "electron . --demo",
+    "test": "node --test \"test/**/*.test.js\"",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.opkapot.uninstaller",
+    "productName": "opKapot Uninstaller",
+    "copyright": "Copyright © 2026 opKapot",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "src/main/workers/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "src/renderer/assets/icon.png",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "opKapot-Uninstaller-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "opKapot-Uninstaller-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "src/renderer/assets/icon.png",
+      "category": "Utility"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "src/renderer/assets/icon.png",
+      "category": "public.app-category.utilities"
+    }
+  }
+}
