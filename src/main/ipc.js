@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, ipcMain, shell, dialog, nativeImage, clipboard } = require('electron');
+const { app, ipcMain, shell, dialog, nativeImage, clipboard, Notification } = require('electron');
 
 const { createState } = require('./services/state');
 const { ProgramService } = require('./services/programs');
@@ -13,12 +13,14 @@ const files = require('./services/files');
 const { cancelJob } = require('./services/jobs');
 const registry = require('./lib/registry');
 const { sleep } = require('./services/programs/common');
+const { SecurityService } = require('./security/service');
+const { registerSecurityIpc } = require('./security/ipc');
 
 const isWin = process.platform === 'win32';
 
 const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === 'string') : []);
 
-function registerIpc({ getWindow, demo }) {
+function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {} }) {
   const state = createState(app.getPath('userData'));
   const demoProvider = demo ? createDemoProvider() : null;
   const trash = (p) => shell.trashItem(p);
@@ -45,9 +47,45 @@ function registerIpc({ getWindow, demo }) {
   const handle = (channel, fn) => ipcMain.handle(channel, (_event, ...args) => fn(...args));
   const jobProgress = (jobId) => (data) => send('job:progress', { jobId, data });
 
+  const notify = (alert) => {
+    if (alert.severity === 'notice' || !Notification.isSupported()) return;
+    const n = new Notification({ title: alert.title, body: alert.body || '', icon: path.join(__dirname, '..', 'renderer', 'assets', 'icon.png') });
+    n.on('click', () => {
+      const win = getWindow();
+      if (!win) return;
+      win.show();
+      win.focus();
+      if (alert.view) send('app:navigate', alert.view);
+    });
+    n.show();
+  };
+  const security = new SecurityService({
+    demo,
+    // Demo results live apart so sample alerts never show up on the real PC.
+    userDataDir: demo ? path.join(app.getPath('userData'), 'demo') : app.getPath('userData'),
+    backupDir: state.backupDir,
+    trash,
+    getSettings: state.getSettings,
+    addHistory: (entry) => state.addHistory(entry),
+    notify,
+    broadcast: (alerts) => send('security:alerts', alerts),
+  });
+  if (demo && !security.store.get().alerts.length) {
+    const t = Date.now();
+    security.store.set({
+      ...security.store.get(),
+      alerts: [
+        { severity: 'warning', title: 'Discord started using your microphone', body: 'If you didn\'t start a call or recording, check Camera & Mic.', view: 'security/privacy', time: t - 25 * 60_000 },
+        { severity: 'warning', title: 'New startup program: WindowsHelper', body: 'powershell.exe -w hidden -nop -enc SQBFAFgA…', view: 'security/startup', time: t - 3 * 3_600_000 },
+        { severity: 'danger', title: 'Microsoft Defender found a threat', body: 'Open Virus Scan to see what was found.', view: 'security/scan', time: t - 12 * 86_400_000 },
+      ],
+    });
+  }
+  registerSecurityIpc({ handle, security, state, send, onGuardSettingsChanged });
+
   // ---------------------------------------------------------------- app ---
   handle('app:info', () => ({
-    name: 'opKapot Uninstaller',
+    name: 'opKapot',
     version: app.getVersion(),
     platform: process.platform,
     demo: !!demo,
@@ -75,8 +113,13 @@ function registerIpc({ getWindow, demo }) {
   });
   handle('clipboard:write', (text) => clipboard.writeText(String(text ?? '')));
 
-  handle('settings:get', () => state.getSettings());
-  handle('settings:set', (patch) => state.updateSettings(patch));
+  handle('settings:get', () => state.publicSettings());
+  handle('settings:set', (patch) => {
+    const result = state.updateFromPage(patch);
+    security.applyGuardSettings();
+    onGuardSettingsChanged();
+    return result;
+  });
   handle('history:list', () => state.listHistory());
   handle('history:clear', () => state.clearHistory());
   handle('sys:drives', () => listDrives());
@@ -109,6 +152,27 @@ function registerIpc({ getWindow, demo }) {
         iconCache.set(id, url);
       }
       out[id] = iconCache.get(id);
+    }
+    return out;
+  });
+
+  const fileIconCache = new Map();
+  handle('sys:file-icons', async (paths) => {
+    const out = {};
+    for (const file of strings(paths).slice(0, 80)) {
+      if (!fileIconCache.has(file)) {
+        let url = null;
+        try {
+          if (/^[a-z]:\\/i.test(file) || file.startsWith('/')) {
+            if (fs.existsSync(file)) {
+              const img = await app.getFileIcon(file, { size: 'normal' });
+              if (img && !img.isEmpty()) url = img.toDataURL();
+            }
+          }
+        } catch { /* no icon */ }
+        fileIconCache.set(file, url);
+      }
+      out[file] = fileIconCache.get(file);
     }
     return out;
   });
@@ -307,6 +371,8 @@ function registerIpc({ getWindow, demo }) {
     }
     return result;
   });
+
+  return { state, security };
 }
 
 module.exports = { registerIpc };

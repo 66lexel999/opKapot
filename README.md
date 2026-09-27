@@ -1,10 +1,66 @@
-# opKapot Uninstaller
+# opKapot: Uninstaller & Security
 
-An advanced uninstaller and disk cleaner for Windows, inspired by IObit Uninstaller. It removes programs and Windows apps in bulk, wipes the leftovers they leave behind, finds large and duplicate files, and cleans junk, all from a dark sidebar UI.
+An advanced uninstaller, disk cleaner and PC security suite for Windows. It removes programs and Windows apps in bulk, wipes their leftovers, finds large and duplicate files and cleans junk. It also scans for viruses and checks whether anyone is spying on, controlling or getting into your PC.
+
+![Security Center](docs/screenshots/security-center.png)
+
+## Security
+
+Open **Security** in the sidebar. **Smart Scan** runs a Hack Check and a quick virus scan together.
+
+### Virus Scan
+- **Two engines at once.** opKapot drives **Microsoft Defender's** engine, which is built into Windows, updated several times a day and scores near the top in independent AV-TEST and AV-Comparatives tests. At the same time it runs **its own checks** for the tricks malware uses:
+  - programs disguised as documents (`Invoice.pdf.exe`, right-to-left-override names, a `.pdf` that is really an `.exe`);
+  - fake Windows files (`svchost.exe` outside `C:\Windows`);
+  - scripts that download and run code, hide encoded PowerShell, switch off Defender or AMSI, or delete your backups (a ransomware pattern);
+  - booby-trapped shortcuts and `.url`/`.reg` files, programs dropped in the Startup folder, and ransom notes.
+- **Quick scan** covers Downloads, Desktop, Documents, startup folders, Temp and AppData. **Full scan** covers every drive. **Custom scan** takes any folder you pick.
+- **Quarantine** locks a suspicious file away. It is scrambled so it can't run, and you can restore it later.
+- **VirusTotal** (optional, with a free API key): checks a file against 70+ antivirus engines. Only the file's SHA-256 fingerprint is sent, never the file.
+- **Protection history** lists everything Defender has ever caught. **Update definitions**, **Remove threats** and the **Defender Offline** rootkit scan are one click each.
+
+### Hack Check: is anyone getting into your PC?
+A read-only audit that explains every finding in plain words. Anything it can fix gets a **Fix** button, and registry changes are backed up to a `.reg` file first.
+
+| Area | What it looks for |
+|---|---|
+| **Remote access** | Remote-control apps (TeamViewer, AnyDesk, RustDesk, ScreenConnect, and more), Remote Desktop and Remote Assistance being on, active remote sessions, sign-ins from other computers, failed password attempts, router ports forwarded to your PC (UPnP), programs that accept connections from the internet |
+| **Keyloggers & spyware** | Keyboard filter drivers, known keyloggers and stalkerware, DLL-injection hooks (AppInit, Winlogon Shell/Userinit, LSA packages, IFEO debuggers, silent-exit monitors), plain-text password storage (WDigest), apps using your camera or microphone right now |
+| **Startup & hidden programs** | Run keys, Startup folders, scheduled tasks, services, drivers and hidden **WMI** tasks, with digital-signature checks. Unsigned programs in Temp or AppData, hidden or encoded PowerShell and script hosts are flagged |
+| **Browsers** | Extensions in Chrome, Edge, Brave, Opera, Vivaldi and Firefox. Force-installed or sideloaded extensions, policy hijacks (homepage, search, proxy), and what each extension can read |
+| **Internet & network** | Proxy settings, DNS servers, the hosts file (blocked security sites, redirected banking or login sites), fake root certificates that let someone read HTTPS traffic |
+| **Windows protection** | Antivirus and firewall state, Defender exclusions that hide folders from scanning, Tamper Protection, UAC, SmartScreen, Windows Update |
+| **Accounts & sharing** | New admin accounts, the Guest account, shared folders, who is connected to your shares, SMBv1 |
+
+### Network Monitor
+A live table of every connection and open port, showing **which program owns it**, whether it's **incoming** (another device connected to you) or outgoing, and where the other side is. Filter by Internet, Incoming, Listening or Flagged, look up an IP address, **block a program** in Windows Firewall, or end it.
+
+### Startup Items, Browser Extensions, Camera & Mic
+- **Startup Items**: everything that starts with Windows, with publisher, signature and risk. Disable, enable or remove items.
+- **Browser Extensions**: every extension in every browser profile, with what it can do and how it was installed.
+- **Camera & Mic**: which apps used your camera, microphone and location, when, and for how long. A red banner shows anything using them **right now**.
+
+### Real-time Guard
+While opKapot runs (it can sit in the tray and start with Windows), the Guard checks your PC every 30 seconds and alerts you when:
+- an app starts using your **camera or microphone**;
+- a device on the **internet connects to your PC**, or a program opens a new port;
+- a **remote-control tool** starts, or someone signs in with **Remote Desktop**;
+- a new **startup program**, Startup-folder file or scheduled task appears;
+- **Microsoft Defender** catches something.
+
+### What it can and can't do
+opKapot is honest about its limits. Microsoft Defender's engine does the signature scanning. opKapot does not ship its own virus database. Keylogger detection finds the ways keyloggers hook into Windows (drivers, hooks, startup entries, known products), but no tool can promise to catch every custom keylogger. If Hack Check finds something serious, or you believe someone has control of your PC, disconnect from the internet, change your passwords **from a different device**, and consider a clean Windows reinstall.
+
+| | |
+|---|---|
+| ![Hack Check](docs/screenshots/hack-check.png) | ![Virus scan](docs/screenshots/virus-scan.png) |
+| ![Network monitor](docs/screenshots/network-monitor.png) | ![Startup items](docs/screenshots/startup-items.png) |
+| ![Browser extensions](docs/screenshots/browser-extensions.png) | ![Camera and mic](docs/screenshots/camera-mic.png) |
+
+## Uninstaller & cleaner
 
 ![Bundleware view](docs/screenshots/bundleware.png)
 
-## Features
 
 ### Programs
 - **All Programs**, **Bundleware**, **Recently Installed**, **Large Programs** and **Infrequently Used** views.
@@ -53,15 +109,19 @@ Deleting things is serious, so several guards are built in:
 - **Leftovers never overlap other programs.** A folder is not offered if it is, or contains, another installed program's folder. A publisher folder is only offered when no other installed program comes from that publisher.
 - **Registry.** Shared keys (`Microsoft`, `Classes`, `Policies`, `Windows`, …) can never be deleted. Every deleted key is backed up to `%APPDATA%\opKapot Uninstaller\registry-backups`.
 - Files go to the **Recycle Bin** by default, and every delete asks for confirmation first.
+- **Security checks are read-only.** Only a separate, fixed set of actions can change anything (turn a protection on, disable a startup item, remove a policy, block a program), and each one asks first. Registry changes are exported to a `.reg` backup before they happen. The PowerShell scripts are passed to PowerShell in memory, not written to a temp file that something else could swap.
+- **Quarantined files** are scrambled on disk so they can't run, and restored byte for byte if you change your mind.
 
 ## Download and run
 
 ### Windows (recommended)
-1. Download **[opKapot-Uninstaller-Portable-1.0.0.exe](release/opKapot-Uninstaller-Portable-1.0.0.exe)** (open the link, then click **Download raw file**). It's portable, so there's nothing to install.
+1. Download **[opKapot-Uninstaller-Portable-1.1.0.exe](release/opKapot-Uninstaller-Portable-1.1.0.exe)** (open the link, then click **Download raw file**). It's portable, so there's nothing to install.
 2. Double-click it. Windows SmartScreen may say *"Windows protected your PC"* because the app isn't code-signed: click **More info → Run anyway**.
-3. Click **Yes** when Windows asks for administrator permission. Uninstalling programs and cleaning Windows folders needs it.
+3. Click **Yes** when Windows asks for administrator permission. Uninstalling programs, cleaning Windows folders and the security checks need it.
 
-The first launch takes a few seconds while the portable exe unpacks itself. Put the exe anywhere you like (for example your Desktop) and run it from there.
+The first launch takes a few seconds while the portable exe unpacks itself. Put the exe somewhere permanent (for example `Documents\opKapot`) before you turn on **Settings → Start protection when Windows starts**, because Windows will launch it from that spot.
+
+Closing the window while the Real-time Guard is on keeps opKapot running in the notification area. Right-click the tray icon to quit.
 
 The **Build** GitHub Actions workflow also produces an installer (`opKapot-Uninstaller-Setup-x.y.z.exe`) and a fresh portable exe. Once Actions is enabled for the repository, download them from a workflow run's **Artifacts** section.
 
@@ -77,10 +137,10 @@ npm run dist:win   # build the Windows installer + portable exe into dist/ (run 
 ```
 
 ### Demo mode
-`npm run demo` (or `--demo`) fills **Programs** and **Windows Apps** with sample data and only simulates uninstalls, so you can try the UI safely on any OS. **Files** and **Junk Cleaner** still work on your real disk in demo mode. They always ask before deleting anything.
+`npm run demo` (or `--demo`) fills **Programs**, **Windows Apps** and every **Security** view with a sample PC (including a few planted problems) and only simulates uninstalls and fixes, so you can try the UI safely on any OS. **Files** and **Junk Cleaner** still work on your real disk in demo mode. They always ask before deleting anything.
 
 ## Platform support
-- **Windows 10/11**: full feature set. Programs are read from the registry (64-bit, 32-bit and per-user).
+- **Windows 10/11**: full feature set. Programs are read from the registry (64-bit, 32-bit and per-user). Security features need Windows.
 - **Linux**: APT, Flatpak and Snap packages; Files and Junk Cleaner.
 - **macOS**: apps in `/Applications` (uninstall moves them to the Trash); Files and Junk Cleaner.
 
@@ -94,9 +154,13 @@ src/main/                 Electron main process
   services/leftovers.js   leftover finder
   services/junk.js        junk categories
   services/windowsApps.js AppX packages
-  workers/scan-worker.js  file scans, duplicate hashing, folder sizes, junk scan/clean (worker thread)
+  security/ps/            read-only PowerShell collectors + actions.ps1 (the only script that changes anything)
+  security/analyze/       pure functions that turn collected data into findings
+  security/service.js     virus scan, Hack Check, network, startup, quarantine, VirusTotal, Real-time Guard
+  workers/scan-worker.js  file scans, duplicate hashing, folder sizes, junk scan/clean, malware heuristics (worker thread)
+  workers/heuristics.js   opKapot's own detection rules
 src/renderer/             UI (plain ES modules, no framework)
   js/components/table.js  virtualised, sortable, multi-select table
-  js/views/               one module per sidebar section
+  js/views/               one module per sidebar section (js/views/security/ for Security)
 test/                     node:test unit tests
 ```

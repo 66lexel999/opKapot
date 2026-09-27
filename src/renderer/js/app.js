@@ -1,7 +1,9 @@
-import { api, esc, h, formatBytes } from './util.js';
+import { api, esc, h, formatBytes, relativeTime } from './util.js';
 import { icon } from './icons.js';
 import { appState, programsStore } from './store.js';
-import { closeMenu, closeTopModal, hasOpenModal, showMenu } from './components/overlay.js';
+import { securityStore } from './securityStore.js';
+import { setNavigator } from './router.js';
+import { closeMenu, closeTopModal, hasOpenModal, showMenu, toast } from './components/overlay.js';
 import { ProgramsView } from './views/programs.js';
 import { FilesView } from './views/files.js';
 import { DuplicatesView } from './views/duplicates.js';
@@ -9,9 +11,30 @@ import { AnalyzerView } from './views/analyzer.js';
 import { JunkView } from './views/junk.js';
 import { AppsView } from './views/apps.js';
 import { HistoryView } from './views/history.js';
+import { SecurityCenterView } from './views/security/center.js';
+import { VirusScanView } from './views/security/scan.js';
+import { HackCheckView } from './views/security/hackcheck.js';
+import { NetworkView } from './views/security/network.js';
+import { StartupView } from './views/security/startup.js';
+import { ExtensionsView } from './views/security/extensions.js';
+import { PrivacyView } from './views/security/privacy.js';
+import { QuarantineView } from './views/security/quarantine.js';
 import { openAbout, openSettings } from './dialogs/settings.js';
 
 const NAV = [
+  {
+    id: 'security', label: 'Security', icon: 'shieldFill',
+    items: [
+      ['security/center', 'Security Center', () => new SecurityCenterView()],
+      ['security/scan', 'Virus Scan', () => new VirusScanView()],
+      ['security/hackcheck', 'Hack Check', () => new HackCheckView()],
+      ['security/network', 'Network Monitor', () => new NetworkView()],
+      ['security/startup', 'Startup Items', () => new StartupView()],
+      ['security/extensions', 'Browser Extensions', () => new ExtensionsView()],
+      ['security/privacy', 'Camera & Mic', () => new PrivacyView()],
+      ['security/quarantine', 'Quarantine', () => new QuarantineView()],
+    ],
+  },
   {
     id: 'programs', label: 'Programs', icon: 'programs',
     items: [
@@ -46,14 +69,25 @@ const views = new Map();
 let current = null;
 let currentId = null;
 
+function navBadge(groupId) {
+  if (groupId === 'history') return unseenHistory ? '<span class="nav-dot"></span>' : '';
+  if (groupId === 'security') {
+    const st = securityStore.status;
+    if (st?.overall === 'danger') return '<span class="nav-dot"></span>';
+    if (st?.overall === 'warning') return '<span class="nav-dot warn"></span>';
+  }
+  return '';
+}
+
+// Only the group holding the current view is expanded, so the sidebar stays short.
 function renderNav() {
   const nav = document.getElementById('nav');
   nav.innerHTML = NAV.map((group) => {
     const active = currentId === group.id || currentId?.startsWith(`${group.id}/`);
     const head = `<div class="nav-head${active ? ' active' : ''}${group.items ? '' : ' solo'}" data-go="${group.items ? group.items[0][0] : group.id}">
-      ${icon(group.icon, { size: 24 })}<span>${esc(group.label)}</span>${group.id === 'history' && unseenHistory ? '<span class="nav-dot"></span>' : ''}</div>`;
-    const items = (group.items || []).map(([id, label]) => `<div class="nav-item${currentId === id ? ' active' : ''}" data-go="${id}">${esc(label)}</div>`).join('');
-    return `<div class="nav-group">${head}${items}</div>`;
+      ${icon(group.icon, { size: 24 })}<span>${esc(group.label)}</span>${navBadge(group.id)}${group.items ? `<span class="nav-chev">${icon(active ? 'chevronDown' : 'chevronRight', { size: 15 })}</span>` : ''}</div>`;
+    const items = active ? (group.items || []).map(([id, label]) => `<div class="nav-item${currentId === id ? ' active' : ''}" data-go="${id}">${esc(label)}</div>`).join('') : '';
+    return `<div class="nav-group${active ? ' open' : ''}">${head}${items}</div>`;
   }).join('');
 }
 
@@ -69,6 +103,7 @@ function navigate(id) {
   host.replaceChildren(current.mount());
   current.onShow?.();
   renderNav();
+  renderBottomBar();
   try {
     localStorage.setItem('opk:view', id);
   } catch { /* storage unavailable */ }
@@ -87,8 +122,34 @@ function ring(pct) {
     <text x="28" y="32.5" text-anchor="middle" fill="#eee" font-size="13" font-weight="600">${Math.round(pct)}%</text></svg>`;
 }
 
+function renderSecurityBar(bar) {
+  const st = securityStore.status;
+  if (!st || !st.supported) {
+    bar.innerHTML = '';
+    return;
+  }
+  const guardOn = appState.settings.guardEnabled && st.guard.enabled;
+  const tone = st.overall === 'danger' ? 'danger' : st.overall === 'warning' ? 'warning' : 'ok';
+  const title = { danger: 'Your PC needs attention', warning: 'A few things need your attention', ok: 'Your PC is protected' }[tone];
+  const parts = [
+    st.antivirus.on ? `${esc(st.antivirus.name)} is on` : 'Antivirus is off',
+    guardOn ? 'Real-time Guard is watching' : 'Real-time Guard is off',
+    `Last virus scan: ${st.lastScanTime ? esc(relativeTime(st.lastScanTime).toLowerCase()) : 'never'}`,
+  ];
+  bar.innerHTML = `
+    <div class="bb-shield sec-${tone}">${icon(tone === 'ok' ? 'shieldOk' : 'shieldAlert', { size: 34 })}</div>
+    <div class="bb-text"><div class="bb-title">${esc(title)}</div><div class="bb-sub">${parts.join(' · ')}</div></div>
+    <div class="bb-actions">${currentId === 'security/center'
+    ? '<button class="btn btn-orange" data-go="security/scan">Virus Scan</button><a class="link" data-go="security/network">Who is connected?</a>'
+    : '<button class="btn btn-orange" data-go="security/center" data-smart-scan>Smart Scan</button><a class="link" data-go="security/hackcheck">Run Hack Check</a>'}</div>`;
+}
+
 function renderBottomBar() {
   const bar = document.getElementById('bottom-bar');
+  if (currentId?.startsWith('security/')) {
+    renderSecurityBar(bar);
+    return;
+  }
   const drive = appState.systemDrive;
   if (!drive) {
     bar.innerHTML = '';
@@ -134,9 +195,10 @@ function wireTitleBar() {
     showMenu(r.right - 220, r.bottom + 4, [
       { label: 'Settings', icon: 'settings', onClick: openSettings },
       { label: 'History', icon: 'history', onClick: () => navigate('history') },
+      { label: 'Security Center', icon: 'shieldOk', onClick: () => navigate('security/center') },
       { label: 'Refresh program list', icon: 'refresh', onClick: () => programsStore.load(true) },
       '-',
-      { label: 'About opKapot Uninstaller', icon: 'info', onClick: openAbout },
+      { label: 'About opKapot', icon: 'info', onClick: openAbout },
     ]);
   });
 }
@@ -167,6 +229,30 @@ function wireKeyboard() {
   });
 }
 
+// ------------------------------------------------------------- security ---
+
+const ALERT_TOAST = { danger: 'error', warning: 'warn', notice: 'info' };
+
+function wireSecurity() {
+  securityStore.on('status', () => {
+    renderNav();
+    if (currentId?.startsWith('security/')) renderBottomBar();
+  });
+  api.security.onAlerts((alerts) => {
+    for (const a of (alerts || []).slice(0, 3)) {
+      const link = a.view ? ` <a class="link-btn" data-go="${esc(a.view)}">Show</a>` : '';
+      toast(`<b>${esc(a.title)}</b>${a.body ? `<div class="muted small">${esc(a.body)}</div>` : ''}${link}`, ALERT_TOAST[a.severity] || 'info', 9000);
+    }
+  });
+  api.app.onNavigate((id) => navigate(id));
+  api.app.onSettingsChanged((settings) => {
+    appState.settings = settings;
+    appState.emit('settings', settings);
+  });
+  appState.on('settings', () => securityStore.loadStatus());
+  securityStore.loadStatus();
+}
+
 let unseenHistory = false;
 
 async function main() {
@@ -177,10 +263,14 @@ async function main() {
 
   wireTitleBar();
   wireKeyboard();
+  setNavigator(navigate);
   document.addEventListener('click', (e) => {
     const go = e.target.closest('[data-go]');
-    if (go) navigate(go.dataset.go);
+    if (!go) return;
+    navigate(go.dataset.go);
+    if (go.hasAttribute('data-smart-scan')) current?.smartScan?.();
   });
+  wireSecurity();
   appState.on('drives', renderBottomBar);
   appState.on('history', () => {
     if (currentId !== 'history') {
@@ -190,7 +280,7 @@ async function main() {
   });
   renderBottomBar();
 
-  let start = 'programs/all';
+  let start = 'security/center';
   try {
     const saved = localStorage.getItem('opk:view');
     if (saved && factories.has(saved)) start = saved;

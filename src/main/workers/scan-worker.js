@@ -433,7 +433,141 @@ function taskJunkClean({ categories }) {
   return { results, stopped: isStopped() };
 }
 
+// ------------------------------------------------------------ malware ---
+
+const heur = require('./heuristics');
+
+const SKIP_DIRS = new Set(['node_modules', '.git', 'winsxs', 'system volume information', '$recycle.bin', 'windows.old', '$windows.~bt']);
+const CONTENT_EXT = new Set([...heur.SCRIPT, ...heur.MACRO_DOCS, 'lnk', 'url', 'reg', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt',
+  'rtf', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'mp3', 'mp4', 'avi', 'mkv', 'mov', 'wav', 'csv', 'odt', 'html', 'htm', 'com', 'exe', 'bin', '']);
+
+function readBytes(file, n) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(n);
+    const got = fs.readSync(fd, buf, 0, n, 0);
+    return buf.subarray(0, got);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function readZone(file) {
+  if (!IS_WIN) return null;
+  try {
+    return heur.parseZone(fs.readFileSync(`${file}:Zone.Identifier`, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function sha256File(file, size) {
+  if (size > 200 * 1024 * 1024) return null;
+  const hash = crypto.createHash('sha256');
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    let pos = 0;
+    while (pos < size) {
+      const n = fs.readSync(fd, readBuffer, 0, readBuffer.length, pos);
+      if (n <= 0) break;
+      hash.update(readBuffer.subarray(0, n));
+      pos += n;
+    }
+    return hash.digest('hex');
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+/**
+ * Heuristic malware scan. roots: [{ path, depth }] where depth 0 means only
+ * the files directly inside the folder.
+ */
+function taskMalwareScan({ roots, exclude = [], limit = 5000 }) {
+  const excluded = new Set(exclude.map((d) => fold(path.resolve(d))));
+  const seen = roots.length > 1 ? new Set() : null;
+  const findings = [];
+  let scanned = 0;
+
+  for (const r of roots) {
+    const root = typeof r === 'string' ? r : r.path;
+    const maxDepth = typeof r === 'object' && r.depth != null ? r.depth : Infinity;
+    const stack = [[root, 0]];
+    while (stack.length && !isStopped()) {
+      const [dir, depth] = stack.pop();
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      progress({ scanned, flagged: findings.length, currentDir: dir });
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue;
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (depth < maxDepth && !SKIP_DIRS.has(entry.name.toLowerCase()) && !excluded.has(fold(full))) stack.push([full, depth + 1]);
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        if (seen) {
+          const key = fold(full);
+          if (seen.has(key)) continue;
+          seen.add(key);
+        }
+        scanned++;
+        if ((scanned & 511) === 0) progress({ scanned, flagged: findings.length, currentDir: dir });
+        const hits = heur.nameHits(full);
+        let stat = null;
+        if (hits.length || CONTENT_EXT.has(heur.extOf(entry.name))) {
+          try {
+            stat = fs.statSync(full);
+          } catch {
+            continue;
+          }
+          const plan = heur.contentPlan(full, stat.size);
+          if (plan) {
+            try {
+              if (plan.bytes) hits.push(...heur.contentHits(full, readBytes(full, plan.bytes), plan.checks));
+            } catch { /* locked or unreadable */ }
+            if (plan.checks.includes('macro')) {
+              const zone = readZone(full);
+              if (zone && zone.zone >= 3) hits.push({ id: 'macro-doc', severity: 'medium', title: 'Downloaded document with macros', why: 'Macros in downloaded Office files are a top way malware gets in. Only enable them if you trust the sender.' });
+            }
+          }
+        }
+        if (!hits.length) continue;
+        if (!stat) {
+          try {
+            stat = fs.statSync(full);
+          } catch {
+            continue;
+          }
+        }
+        findings.push({
+          path: full,
+          name: entry.name,
+          size: stat.size,
+          mtime: stat.mtimeMs,
+          severity: heur.severityOf(hits),
+          hits,
+          origin: readZone(full),
+          sha256: sha256File(full, stat.size),
+        });
+        if (findings.length >= limit) break;
+      }
+      if (findings.length >= limit) break;
+    }
+  }
+  progress({ scanned, flagged: findings.length, currentDir: '' }, true);
+  return { findings, scanned, stopped: isStopped() };
+}
+
 const TASKS = {
+  malwareScan: taskMalwareScan,
   files: taskFiles,
   duplicates: taskDuplicates,
   dirSizes: taskDirSizes,

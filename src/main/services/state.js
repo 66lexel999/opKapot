@@ -15,7 +15,15 @@ const DEFAULT_SETTINGS = {
   maxFileResults: 100000,
   excludeSystemFolders: true,
   skipHidden: false,
+  guardEnabled: true,             // real-time Guard: watch for new connections, startup items, camera/mic use
+  guardIntervalSec: 30,
+  guardAutostart: false,          // start protection when Windows starts (scheduled task)
+  closeToTray: true,              // keep protecting in the tray when the window is closed
+  virusTotalKeyEnc: '',           // encrypted with Windows DPAPI via Electron safeStorage
 };
+
+// Settings the page may not change directly (they have dedicated handlers).
+const PRIVATE_SETTINGS = new Set(['virusTotalKeyEnc', 'guardAutostart']);
 
 const HISTORY_LIMIT = 500;
 
@@ -27,6 +35,18 @@ function createState(userDataDir) {
     backupDir: path.join(userDataDir, 'registry-backups'),
 
     getSettings: () => settings.get(),
+
+    /** Settings as the page sees them: secrets removed. */
+    publicSettings() {
+      const { virusTotalKeyEnc, ...rest } = settings.get();
+      return { ...rest, hasVirusTotalKey: !!virusTotalKeyEnc };
+    },
+
+    updateFromPage(patch) {
+      const clean = Object.fromEntries(Object.entries(patch || {}).filter(([k]) => !PRIVATE_SETTINGS.has(k)));
+      this.updateSettings(clean);
+      return this.publicSettings();
+    },
 
     updateSettings(patch) {
       const next = { ...settings.get() };
