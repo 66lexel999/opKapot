@@ -1,9 +1,9 @@
 'use strict';
 
-const { safeStorage, shell, app } = require('electron');
+const { safeStorage, shell } = require('electron');
 
 /** IPC handlers for the Security section. */
-function registerSecurityIpc({ handle, security, state, send, onGuardSettingsChanged }) {
+function registerSecurityIpc({ handle, security, state, send }) {
   const jobProgress = (jobId) => (data) => send('job:progress', { jobId, data });
   let scanRows = new Map();
 
@@ -27,6 +27,7 @@ function registerSecurityIpc({ handle, security, state, send, onGuardSettingsCha
   handle('security:unblock', (id) => security.unblock(String(id)));
   handle('security:autoruns', () => security.autoruns());
   handle('security:autorun-action', (id, which) => security.autorunAction(String(id), String(which)));
+  handle('security:autorun-add', (entry) => security.autorunAdd(entry && typeof entry === 'object' ? entry : {}));
   handle('security:extensions', () => security.extensions());
   handle('security:privacy', () => security.privacy());
   handle('security:engines', () => security.engines());
@@ -78,14 +79,6 @@ function registerSecurityIpc({ handle, security, state, send, onGuardSettingsCha
   handle('security:open-uri', (uri) => {
     if (typeof uri === 'string' && /^(ms-settings:[a-z-]+|windowsdefender:\/\/[a-z]+)$/i.test(uri)) return shell.openExternal(uri);
     return null;
-  });
-
-  handle('security:guard-autostart', async (enable) => {
-    const exe = process.env.PORTABLE_EXECUTABLE_FILE || app.getPath('exe');
-    const result = await security.runAction({ type: 'guard-autostart', enable: !!enable, exe });
-    if (result.ok) state.updateSettings({ guardAutostart: !!enable });
-    onGuardSettingsChanged();
-    return result;
   });
 }
 

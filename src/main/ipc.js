@@ -17,10 +17,16 @@ const { SecurityService } = require('./security/service');
 const { registerSecurityIpc } = require('./security/ipc');
 const { GameService } = require('./game/service');
 const { registerGameIpc } = require('./game/ipc');
+const { Autostart } = require('./services/autostart');
+const { runPs } = require('./security/runner');
 
 const isWin = process.platform === 'win32';
 
 const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === 'string') : []);
+
+/** A full path on a local drive. Network (UNC) paths are refused so a click never contacts another computer. */
+const isLocalPath = (p) => typeof p === 'string' && p.length < 4096 && !p.includes('\0')
+  && (isWin ? /^[a-z]:[\\/]/i.test(p) : p.startsWith('/') && !p.startsWith('//'));
 
 function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {}, onGameModeChanged = () => {} }) {
   const state = createState(app.getPath('userData'));
@@ -61,8 +67,10 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {}, onGam
     });
     n.show();
   };
+  const selfPaths = [process.env.PORTABLE_EXECUTABLE_FILE, process.execPath].filter(Boolean);
   const security = new SecurityService({
     demo,
+    selfPaths,
     // Demo results live apart so sample alerts never show up on the real PC.
     userDataDir: demo ? path.join(app.getPath('userData'), 'demo') : app.getPath('userData'),
     backupDir: state.backupDir,
@@ -83,7 +91,7 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {}, onGam
       ],
     });
   }
-  registerSecurityIpc({ handle, security, state, send, onGuardSettingsChanged });
+  registerSecurityIpc({ handle, security, state, send });
 
   const game = new GameService({
     demo,
@@ -97,9 +105,19 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {}, onGam
     // The Guard checks less often while you play, so it never costs frames.
     onModeChange: (on) => security.setGameMode(on),
     addHistory: (entry) => state.addHistory(entry),
-    selfPaths: [process.execPath, process.env.PORTABLE_EXECUTABLE_FILE].filter(Boolean),
+    selfPaths,
   });
   registerGameIpc({ handle, game, send });
+
+  // A dev build (npm start) passes the app folder to electron.exe and never turns itself on.
+  const exe = process.env.PORTABLE_EXECUTABLE_FILE || app.getPath('exe');
+  const autostart = new Autostart({
+    demo,
+    state,
+    runPs,
+    runAction: (action) => security.runAction(action),
+    launch: app.isPackaged ? { exe, args: '--background', auto: true } : { exe, args: `"${app.getAppPath()}" --background`, auto: false },
+  });
 
   // ---------------------------------------------------------------- app ---
   handle('app:info', () => ({
@@ -107,6 +125,7 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {}, onGam
     version: app.getVersion(),
     platform: process.platform,
     demo: !!demo,
+    exe,
     paths: {
       home: app.getPath('home'),
       downloads: app.getPath('downloads'),
@@ -130,6 +149,11 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {}, onGam
     return null;
   });
   handle('clipboard:write', (text) => clipboard.writeText(String(text ?? '')));
+  handle('app:autostart', async (enable) => {
+    const result = await autostart.set(!!enable);
+    onGuardSettingsChanged();
+    return result;
+  });
 
   handle('settings:get', () => state.publicSettings());
   handle('settings:set', (patch) => {
@@ -371,11 +395,33 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {}, onGam
   });
   handle('files:reveal', (p) => typeof p === 'string' && shell.showItemInFolder(p));
   handle('files:open', (p) => (typeof p === 'string' ? shell.openPath(p) : null));
+  // Clicking a part of an address: folders open in Explorer, files are shown
+  // selected in their folder (never run).
+  handle('files:open-location', async (p) => {
+    if (!isLocalPath(p)) return 'This location can\'t be opened.';
+    let stat;
+    try {
+      stat = await fs.promises.stat(p);
+    } catch {
+      return `${p} doesn't exist any more.`;
+    }
+    if (stat.isDirectory()) return (await shell.openPath(p)) || null;
+    shell.showItemInFolder(p);
+    return null;
+  });
   handle('files:pick-exe', async () => {
     const res = await dialog.showOpenDialog(getWindow(), {
       title: 'Choose the game\'s program file',
       properties: ['openFile'],
       filters: [{ name: 'Programs', extensions: ['exe'] }],
+    });
+    return res.canceled ? null : res.filePaths[0];
+  });
+  handle('files:pick-program', async () => {
+    const res = await dialog.showOpenDialog(getWindow(), {
+      title: 'Choose a program to start with Windows',
+      properties: ['openFile'],
+      filters: isWin ? [{ name: 'Programs', extensions: ['exe', 'bat', 'cmd', 'com'] }] : [],
     });
     return res.canceled ? null : res.filePaths[0];
   });
@@ -398,7 +444,7 @@ function registerIpc({ getWindow, demo, onGuardSettingsChanged = () => {}, onGam
     return result;
   });
 
-  return { state, security, game };
+  return { state, security, game, autostart };
 }
 
 module.exports = { registerIpc };

@@ -45,9 +45,9 @@ function createWindow({ show = true } = {}) {
   mainWindow.on('maximize', sendMaximized);
   mainWindow.on('unmaximize', sendMaximized);
   mainWindow.on('close', (event) => {
-    // With the Guard on, closing the window keeps protection running in the tray.
+    // While opKapot has a tray icon, closing the window keeps it running there.
     const s = services?.state.getSettings();
-    if (!quitting && s?.closeToTray && tray && (services?.security.guard.enabled || services?.game.status().active)) {
+    if (!quitting && s?.closeToTray && tray) {
       event.preventDefault();
       mainWindow.hide();
     }
@@ -77,10 +77,15 @@ function quit() {
   app.quit();
 }
 
+function sendSettings() {
+  mainWindow?.webContents.send('settings:changed', services.state.publicSettings());
+}
+
 function updateTray() {
   const s = services.state.getSettings();
   const gameOn = !!services.game.status().active;
-  const wanted = services.security.supported && (s.guardEnabled || gameOn);
+  // Started with Windows, the tray icon is the way back into opKapot.
+  const wanted = services.security.supported && (s.guardEnabled || gameOn || s.guardAutostart);
   if (!wanted) {
     tray?.destroy();
     tray = null;
@@ -107,8 +112,19 @@ function updateTray() {
       click: (item) => {
         services.state.updateSettings({ guardEnabled: item.checked });
         services.security.applyGuardSettings();
-        mainWindow?.webContents.send('settings:changed', services.state.publicSettings());
+        sendSettings();
         updateTray();
+      },
+    },
+    {
+      label: 'Start with Windows',
+      type: 'checkbox',
+      checked: !!s.guardAutostart,
+      click: (item) => {
+        services.autostart.set(item.checked).catch(() => {}).finally(() => {
+          sendSettings();
+          updateTray();
+        });
       },
     },
     { type: 'separator' },
@@ -139,9 +155,16 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     services = registerIpc({ getWindow: () => mainWindow, demo, onGuardSettingsChanged: () => updateTray(), onGameModeChanged: () => updateTray() });
     services.security.applyGuardSettings();
-    createWindow({ show: !background });
     updateTray();
+    // Started with Windows: stay in the tray (or show the window if there's no tray to come back to).
+    createWindow({ show: !background || !tray });
     app.on('activate', showWindow);
+    // Turn on "start with Windows" for a new install and keep the task pointing at this exe.
+    services.autostart.sync().then((changed) => {
+      if (!changed) return;
+      sendSettings();
+      updateTray();
+    }).catch(() => {});
   });
 
   let restoring = false;

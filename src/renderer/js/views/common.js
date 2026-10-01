@@ -1,4 +1,4 @@
-import { api, esc, h, avatar, formatBytes } from '../util.js';
+import { api, esc, h, avatar, formatBytes, pathLink } from '../util.js';
 import { icon } from '../icons.js';
 import { appState, programsStore } from '../store.js';
 
@@ -35,7 +35,12 @@ export function nameCell(iconHtml, title, sub = '') {
 
 /** Name with its folder underneath; long paths are cut at the start so the end stays visible. */
 export function fileNameCell(iconHtml, name, folder) {
-  return `<div class="cell-name">${iconHtml}<div class="name-text"><div class="name-title trunc" title="${esc(name)}">${esc(name)}</div><div class="name-sub trunc path-start" title="${esc(folder)}"><bdi>${esc(folder)}</bdi></div></div></div>`;
+  return `<div class="cell-name">${iconHtml}<div class="name-text"><div class="name-title trunc" title="${esc(name)}">${esc(name)}</div><div class="name-sub trunc path-start" title="${esc(folder)}"><bdi>${pathLink(folder)}</bdi></div></div></div>`;
+}
+
+/** Like nameCell, with a clickable path underneath. */
+export function pathNameCell(iconHtml, title, filePath) {
+  return `<div class="cell-name">${iconHtml}<div class="name-text"><div class="name-title trunc" title="${esc(title)}">${esc(title)}</div><div class="name-sub trunc path-start" title="${esc(filePath)}"><bdi>${pathLink(filePath, { file: true })}</bdi></div></div></div>`;
 }
 
 export function opButtons(buttons) {

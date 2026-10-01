@@ -29,8 +29,9 @@ function productOn(state) {
 }
 
 class SecurityService {
-  constructor({ demo, userDataDir, backupDir, trash, getSettings, addHistory, notify = () => {}, broadcast = () => {} }) {
+  constructor({ demo, userDataDir, backupDir, trash, getSettings, addHistory, notify = () => {}, broadcast = () => {}, selfPaths = [] }) {
     this.demo = !!demo;
+    this.selfPaths = selfPaths;
     this.platform = process.platform;
     this.env = this.demo ? demoData.ENV : process.env;
     this.backupDir = backupDir;
@@ -47,7 +48,7 @@ class SecurityService {
     this.quarantine = new Quarantine(path.join(userDataDir, 'quarantine'));
     this.scanner = new VirusScanner({ demo: this.demo, runPs, collect: (n) => this.collect(n), env: this.env });
     this.guard = new Guard({ collect: () => this.collect('guard', {}, { timeout: 60_000 }), onAlerts: (a) => this.onAlerts(a) });
-    this.demoState = { autorunsDisabled: new Set(), blocked: ['C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'] };
+    this.demoState = { autoruns: null, autorunsDisabled: new Set(), blocked: ['C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'] };
     this.blockedIndex = new Map();
   }
 
@@ -69,7 +70,7 @@ class SecurityService {
     await sleep(name === 'audit' ? 900 : 250);
     switch (name) {
       case 'audit': return demoData.audit();
-      case 'autoruns': return demoData.autoruns();
+      case 'autoruns': return structuredClone(this.demoAutoruns());
       case 'network': return demoData.network();
       case 'status': return demoData.status();
       case 'defender': return demoData.defender();
@@ -90,6 +91,12 @@ class SecurityService {
       }
       default: return {};
     }
+  }
+
+  /** The demo PC's startup items, which Startup Manager can change. */
+  demoAutoruns() {
+    this.demoState.autoruns ??= demoData.autoruns();
+    return this.demoState.autoruns;
   }
 
   /** Digital signatures for files, cached for the session. */
@@ -255,7 +262,7 @@ class SecurityService {
     } catch { /* unsigned-file checks are skipped */ }
     onProgress({ step: 4, text: 'Analyzing…' });
     const connections = step('remote', [], () => analyzeConnections(networkRaw, { sigs, env }));
-    const autoruns = step('startup', [], () => analyzeAutoruns(autorunsRaw, { sigs, env }));
+    const autoruns = step('startup', [], () => analyzeAutoruns(autorunsRaw, { sigs, env, selfPaths: this.selfPaths }));
     const privacy = step('keylogger', [], () => analyzePrivacy(statusRaw?.consent));
     const ignored = new Set(this.store.get().ignored);
     const findings = [...analyzeAudit({
@@ -370,7 +377,7 @@ class SecurityService {
   async autoruns() {
     const raw = await this.collect('autoruns', {}, { timeout: 240_000 });
     const sigs = await this.signatures(autorunFiles(raw, this.env));
-    const entries = analyzeAutoruns(raw, { sigs, env: this.env });
+    const entries = analyzeAutoruns(raw, { sigs, env: this.env, selfPaths: this.selfPaths });
     for (const e of entries) if (this.demo && this.demoState.autorunsDisabled.has(e.id)) e.enabled = false;
     this.autorunIndex = new Map(entries.map((e) => [e.id, e]));
     return entries.map(({ actions, ...e }) => ({
@@ -387,8 +394,43 @@ class SecurityService {
     if (result.ok && this.demo) {
       if (which === 'disable') this.demoState.autorunsDisabled.add(id);
       if (which === 'enable') this.demoState.autorunsDisabled.delete(id);
+      if (which === 'remove') {
+        const a = this.demoAutoruns();
+        a.run.entries = a.run.entries.filter((e) => `run|${e.key}|${e.name}` !== id);
+        a.startupFolder = a.startupFolder.filter((f) => `startup|${f.path}` !== id);
+      }
     }
     if (result.ok) this.addHistory({ type: 'security', title: `${which === 'remove' ? 'Removed' : which === 'disable' ? 'Disabled' : 'Enabled'} startup item`, detail: entry.name, bytes: 0 });
+    return result;
+  }
+
+  /** Start a program of your choice when you sign in (your account's Run key). */
+  async autorunAdd({ path: file, name, args } = {}) {
+    file = typeof file === 'string' ? file.trim() : '';
+    name = typeof name === 'string' ? name.trim() : '';
+    args = typeof args === 'string' ? args.trim() : '';
+    if (!this.supported) throw new Error('Only available on Windows.');
+    const local = this.demo ? path.isAbsolute(file) && !file.startsWith('\\\\') : /^[a-z]:\\/i.test(file);
+    if (!local) throw new Error('Choose a program on this PC.');
+    if (!this.demo && !/\.(exe|bat|cmd|com)$/i.test(file)) throw new Error('Choose a program (.exe, .bat or .cmd file).');
+    if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) throw new Error('That program doesn\'t exist any more.');
+    if (!name || name.length > 80 || /[\\\x00-\x1f]/.test(name)) throw new Error('Give it a name of up to 80 characters, without backslashes.');
+    if (args.length > 500 || /[\x00-\x1f]/.test(args)) throw new Error('The arguments must be one line of up to 500 characters.');
+    const command = `"${file}"${args ? ` ${args}` : ''}`;
+    const runKey = 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run';
+    if (this.demo && this.demoAutoruns().run.entries.some((e) => e.key === runKey && e.name.toLowerCase() === name.toLowerCase())) {
+      return { ok: false, message: `There is already a startup entry called "${name}".` };
+    }
+    const result = await this.runAction({ type: 'run-add', name, command });
+    if (!result.ok) return result;
+    if (this.demo) {
+      this.demoAutoruns().run.entries.push({ hive: 'HKCU', key: runKey, kind: 'Run', name, command });
+      this.demoState.autorunsDisabled.delete(`run|${runKey}|${name}`);
+      result.message = 'Added. It will start the next time you sign in to Windows. (Demo mode: nothing on your PC was changed.)';
+    }
+    // You added it yourself, so the Guard shouldn't warn about it.
+    this.guard.expect(`${runKey}|${name}`);
+    this.addHistory({ type: 'security', title: 'Added startup item', detail: name, bytes: 0 });
     return result;
   }
 

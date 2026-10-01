@@ -1,4 +1,4 @@
-import { api, esc, h, formatBytes, relativeTime, errorMessage } from '../../util.js';
+import { api, esc, h, formatBytes, relativeTime, errorMessage, pathLink } from '../../util.js';
 import { icon } from '../../icons.js';
 import { openModal, toast, confirmDialog } from '../../components/overlay.js';
 import { securityStore } from '../../securityStore.js';
@@ -109,7 +109,7 @@ export class GameModeView {
               ${appIcon(game.exe, game.name, 44)}
               <div class="name-text">
                 <div class="details-name">${esc(game.name || 'No game chosen')}</div>
-                <div class="muted small trunc" title="${esc(game.exe)}">${esc(game.exe || (game.preset ? 'Not found on this PC yet. It will be recognised when it runs.' : ''))}</div>
+                <div class="muted small trunc${game.exe ? ' path-start' : ''}" title="${esc(game.exe)}">${game.exe ? `<bdi>${pathLink(game.exe, { file: true })}</bdi>` : esc(game.preset ? 'Not found on this PC yet. It will be recognised when it runs.' : '')}</div>
                 ${game.platform ? `<span class="pill violet">${esc(game.platform)}</span>` : ''}
               </div>
             </div>

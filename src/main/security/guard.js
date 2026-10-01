@@ -2,6 +2,7 @@
 
 const { asArray, classifyIp } = require('./analyze/common');
 const { matchRemoteTool } = require('./analyze/network');
+const { TASK_NAME } = require('../services/autostart');
 
 /** Reduce a guard.ps1 result to comparable sets. */
 function snapshot(raw) {
@@ -12,7 +13,8 @@ function snapshot(raw) {
     remoteTools: new Map(),
     run: new Map(),
     startup: new Set(asArray(raw?.startupFolder).map(String)),
-    tasks: new Set(asArray(raw?.tasks).map(String)),
+    // opKapot's own "start with Windows" task is never news.
+    tasks: new Set(asArray(raw?.tasks).map(String).filter((t) => t !== `\\${TASK_NAME}`)),
     rdp: asArray(raw?.rdpSessions).length > 0,
     threats: typeof raw?.threatCount === 'number' ? raw.threatCount : null,
   };
@@ -37,8 +39,8 @@ function snapshot(raw) {
   return s;
 }
 
-/** Alerts for anything that appeared between two snapshots. */
-function diffSnapshots(prev, next) {
+/** Alerts for anything that appeared between two snapshots, except the Run entries in `expected`. */
+function diffSnapshots(prev, next, expected = new Set()) {
   if (!prev) return [];
   const alerts = [];
   const added = (a, b) => [...b.keys()].filter((k) => !a.has(k));
@@ -59,6 +61,7 @@ function diffSnapshots(prev, next) {
     alerts.push({ severity: 'notice', title: `${c.name || 'A program'} opened port ${c.localPort}`, body: 'It now accepts connections from other devices.', view: 'security/network' });
   }
   for (const k of added(prev.run, next.run)) {
+    if (expected.has(k)) continue;
     const r = next.run.get(k);
     alerts.push({ severity: 'warning', title: `New startup program: ${r.name}`, body: r.command, view: 'security/startup' });
   }
@@ -88,6 +91,12 @@ class Guard {
     this.running = false;
     this.lastTick = null;
     this.lastError = null;
+    this.expected = new Set();
+  }
+
+  /** A Run entry the user just added in opKapot: don't alert when it appears. */
+  expect(runKey) {
+    this.expected.add(runKey);
   }
 
   get enabled() {
@@ -112,7 +121,8 @@ class Guard {
     this.running = true;
     try {
       const next = snapshot(await this.collect());
-      const alerts = diffSnapshots(this.prev, next);
+      const alerts = diffSnapshots(this.prev, next, this.expected);
+      for (const k of this.expected) if (next.run.has(k)) this.expected.delete(k);
       this.prev = next;
       this.lastTick = Date.now();
       this.lastError = null;

@@ -1,4 +1,4 @@
-import { api, esc, h, sortBy, avatar, formatDate, errorMessage } from '../../util.js';
+import { api, esc, h, sortBy, avatar, formatDate, errorMessage, pathLink } from '../../util.js';
 import { icon } from '../../icons.js';
 import { DataTable } from '../../components/table.js';
 import { openModal, showMenu } from '../../components/overlay.js';
@@ -92,7 +92,7 @@ export class ExtensionsView {
         <div class="settings-section">What it can do</div>
         ${e.capabilities.length ? `<ul class="hit-list">${e.capabilities.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : '<p class="muted">Only limited access.</p>'}
         <p class="advice">${icon('info', { size: 16 })}<span>${esc(advice)}</span></p>
-        <dl class="kv"><dt>ID</dt><dd class="selectable mono">${esc(e.extensionId)}</dd>${e.installed ? `<dt>Installed</dt><dd>${formatDate(e.installed)}</dd>` : ''}${e.folder ? `<dt>Folder</dt><dd class="selectable">${esc(e.folder)}</dd>` : ''}</dl>`,
+        <dl class="kv"><dt>ID</dt><dd class="selectable mono">${esc(e.extensionId)}</dd>${e.installed ? `<dt>Installed</dt><dd>${formatDate(e.installed)}</dd>` : ''}${e.folder ? `<dt>Folder</dt><dd class="selectable">${pathLink(e.folder)}</dd>` : ''}</dl>`,
       buttons: [
         e.storeUrl ? { label: 'Store page', onClick: () => api.app.openExternal(e.storeUrl) } : null,
         e.folder ? { label: 'Show folder', onClick: () => api.files.reveal(e.folder) } : null,

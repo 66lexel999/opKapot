@@ -17,6 +17,7 @@ const { Quarantine } = require('../src/main/security/quarantine');
 const { lookup, parseReport } = require('../src/main/security/virustotal');
 const { buildScript } = require('../src/main/security/runner');
 const { SecurityService } = require('../src/main/security/service');
+const { analyzeAutoruns } = require('../src/main/security/analyze/autoruns');
 
 const PS_DIR = path.join(__dirname, '..', 'src', 'main', 'security', 'ps');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'opk-sec-'));
@@ -192,6 +193,35 @@ test('Guard alerts only on things that are new', () => {
   assert.equal(alerts.find((a) => a.title === 'AnyDesk just started').severity, 'danger');
 });
 
+test('Guard stays quiet about opKapot\'s own task and startup apps you just added', () => {
+  const base = { run: [], tasks: [] };
+  const first = snapshot(base);
+  const next = snapshot({
+    run: [{ key: 'HKCU\\Run', name: 'My Tool', command: '"C:\\Tools\\tool.exe"' }, { key: 'HKCU\\Run', name: 'Other', command: 'other.exe' }],
+    tasks: ['\\opKapot Guard', '\\Sneaky'],
+  });
+  const titles = diffSnapshots(first, next, new Set(['HKCU\\Run|My Tool'])).map((a) => a.title);
+  assert.deepEqual(titles.sort(), ['New scheduled task', 'New startup program: Other']);
+});
+
+test('opKapot\'s own startup task is recognised, and only trusted when it starts this copy', () => {
+  const env = { USERPROFILE: 'C:\\Users\\Me', LOCALAPPDATA: 'C:\\Users\\Me\\AppData\\Local', APPDATA: 'C:\\Users\\Me\\AppData\\Roaming', TEMP: 'C:\\Users\\Me\\AppData\\Local\\Temp' };
+  const exe = 'C:\\Users\\Me\\Documents\\opKapot\\opKapot.exe';
+  const task = (file, name = 'opKapot Guard') => ({ tasks: [{ path: '\\', name, state: 'Ready', runLevel: 'Highest', user: 'Me', actions: [{ exe: file, args: '--background' }] }] });
+
+  const [mine] = analyzeAutoruns(task(exe), { env, selfPaths: [exe.toUpperCase()] });
+  assert.equal(mine.self, true);
+  assert.equal(mine.name, 'opKapot');
+  assert.equal(mine.risk, 'ok', 'our own task is not flagged in Hack Check');
+
+  const [impostor] = analyzeAutoruns(task('C:\\Users\\Me\\AppData\\Local\\Temp\\x.exe'), { env, selfPaths: [exe] });
+  assert.equal(impostor.self, true);
+  assert.equal(impostor.risk, 'danger', 'a task using our name but starting something else is still flagged');
+
+  const [other] = analyzeAutoruns(task(exe, 'Something else'), { env, selfPaths: [exe] });
+  assert.equal(other.self, false);
+});
+
 // ------------------------------------------------------------ quarantine ---
 
 test('quarantine scrambles files and restores them byte for byte', async () => {
@@ -316,4 +346,44 @@ test('demo PC: Hack Check, network, startup, privacy and scan all agree', async 
   const scan = await svc.scan({ jobId: 't', type: 'quick' }, () => {});
   assert.ok(scan.rows.length >= 2);
   assert.ok(scan.rows.every((r) => r.id && r.engine && r.severity));
+});
+
+test('demo PC: Startup Manager adds, switches off and removes startup apps', async () => {
+  const dir = tmp();
+  const history = [];
+  const svc = new SecurityService({
+    demo: true, userDataDir: dir, backupDir: dir, trash: async () => {}, addHistory: (h) => history.push(h),
+    getSettings: () => ({ guardEnabled: false, guardIntervalSec: 30 }),
+  });
+  const program = path.join(dir, 'tool.exe');
+  fs.writeFileSync(program, 'MZ');
+  const before = await svc.autoruns();
+
+  await assert.rejects(svc.autorunAdd({ path: 'relative\\tool.exe', name: 'Tool' }), /program on this PC/);
+  await assert.rejects(svc.autorunAdd({ path: path.join(dir, 'missing.exe'), name: 'Tool' }), /doesn't exist/);
+  await assert.rejects(svc.autorunAdd({ path: program, name: '' }), /name/);
+  await assert.rejects(svc.autorunAdd({ path: program, name: 'a\\b' }), /backslash/);
+  await assert.rejects(svc.autorunAdd({ path: program, name: 'Tool', args: 'a\nb' }), /one line/);
+  assert.equal((await svc.autorunAdd({ path: program, name: 'steam' })).ok, false, 'names already in use are refused');
+
+  const added = await svc.autorunAdd({ path: program, name: 'My Tool', args: '--minimized' });
+  assert.equal(added.ok, true);
+  assert.ok(svc.guard.expected.has('HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run|My Tool'), 'the Guard expects it');
+  let list = await svc.autoruns();
+  const mine = list.find((e) => e.name === 'My Tool');
+  assert.equal(list.length, before.length + 1);
+  assert.equal(mine.command, `"${program}" --minimized`);
+  assert.equal(mine.enabled, true);
+  assert.ok(mine.canDisable && mine.canRemove);
+
+  assert.equal((await svc.autorunAction(mine.id, 'disable')).ok, true);
+  assert.equal((await svc.autoruns()).find((e) => e.id === mine.id).enabled, false);
+  assert.equal((await svc.autorunAction(mine.id, 'remove')).ok, true);
+  list = await svc.autoruns();
+  assert.equal(list.length, before.length);
+  assert.ok(!list.some((e) => e.id === mine.id));
+
+  assert.equal((await svc.autorunAdd({ path: program, name: 'My Tool' })).ok, true, 'a removed name can be used again');
+  assert.equal((await svc.autoruns()).find((e) => e.name === 'My Tool').enabled, true, 'and starts enabled');
+  assert.deepEqual(history.map((h) => h.title), ['Added startup item', 'Disabled startup item', 'Removed startup item', 'Added startup item']);
 });

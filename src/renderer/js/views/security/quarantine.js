@@ -2,7 +2,7 @@ import { api, esc, h, formatBytes, formatDateTime, errorMessage } from '../../ut
 import { DataTable } from '../../components/table.js';
 import { confirmDialog, toast } from '../../components/overlay.js';
 import { securityStore } from '../../securityStore.js';
-import { viewHeader, emptyHtml, loadingHtml, opButtons, nameCell } from '../common.js';
+import { viewHeader, emptyHtml, loadingHtml, opButtons, pathNameCell } from '../common.js';
 import { icon } from '../../icons.js';
 
 /** Files locked away by opKapot. They are scrambled so they cannot run. */
@@ -23,7 +23,7 @@ export class QuarantineView {
       selectable: false,
       emptyHtml: loadingHtml('Loading…'),
       columns: [
-        { key: 'name', label: (t) => `File (${t.rows.length})`, render: (e) => nameCell(`<span class="sev-ico sev-danger">${icon('vault', { size: 24 })}</span>`, e.name, e.originalPath) },
+        { key: 'name', label: (t) => `File (${t.rows.length})`, render: (e) => pathNameCell(`<span class="sev-ico sev-danger">${icon('vault', { size: 24 })}</span>`, e.name, e.originalPath) },
         { key: 'threat', label: 'Reason', width: 'minmax(0, 1fr)', render: (e) => `<span class="trunc">${esc(e.threat || 'Suspicious file')}</span>` },
         { key: 'size', label: 'Size', width: '100px', render: (e) => `<span class="trunc">${formatBytes(e.size)}</span>` },
         { key: 'date', label: 'Quarantined', width: '180px', render: (e) => `<span class="trunc">${formatDateTime(e.date)}</span>` },

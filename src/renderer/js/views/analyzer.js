@@ -1,7 +1,7 @@
-import { api, esc, h, formatBytes, formatDate, formatNumber, plural, sortBy, uid, errorMessage } from '../util.js';
+import { api, esc, h, formatBytes, formatDate, formatNumber, plural, sortBy, uid, errorMessage, pathCrumbs } from '../util.js';
 import { icon } from '../icons.js';
 import { DataTable } from '../components/table.js';
-import { showMenu } from '../components/overlay.js';
+import { showMenu, openLocation } from '../components/overlay.js';
 import { appState } from '../store.js';
 import { viewHeader, emptyHtml, loadingHtml, nameCell, opButtons, LocationPicker, ScanProgress } from './common.js';
 import { fileBadge } from '../fileTypes.js';
@@ -16,17 +16,7 @@ const GETTERS = {
 };
 
 function splitPath(p) {
-  const win = /^[a-z]:\\/i.test(p);
-  const sep = win ? '\\' : '/';
-  const parts = p.split(/[\\/]+/).filter(Boolean);
-  const crumbs = [];
-  let acc = win ? '' : '';
-  parts.forEach((part, i) => {
-    acc = win ? (i === 0 ? `${part}\\` : `${acc}${acc.endsWith('\\') ? '' : '\\'}${part}`) : `${acc}/${part}`;
-    crumbs.push({ label: part, path: acc });
-  });
-  if (!win) crumbs.unshift({ label: '/', path: '/' });
-  return { crumbs, sep };
+  return pathCrumbs(p) || { crumbs: p ? [{ label: p, path: p }] : [], sep: '\\' };
 }
 
 function parentOf(p) {
@@ -55,6 +45,7 @@ export class AnalyzerView {
       <div class="toolbar">
         <span data-loc></span>
         <button class="btn" data-up title="Parent folder">${icon('arrowUp', { size: 17 })}<span>Up</span></button>
+        <button class="btn" data-explore title="Open this folder in ${appState.isWindows ? 'Explorer' : 'your file manager'}">${icon('open', { size: 17 })}<span>Open</span></button>
         <button class="btn btn-accent" data-scan>${icon('refresh', { size: 17 })}<span>Rescan</span></button>
         <div class="crumbs"></div>
       </div>
@@ -114,6 +105,7 @@ export class AnalyzerView {
       const parent = parentOf(this.current || '');
       if (parent) this.open(parent);
     });
+    this.el.querySelector('[data-explore]').addEventListener('click', () => this.current && openLocation(this.current));
     this.el.querySelector('[data-scan]').addEventListener('click', () => (this.jobId ? api.jobs.cancel(this.jobId) : this.open(this.current, true)));
     this.deleteBtn.addEventListener('click', () => this.primaryAction());
     this.crumbs.addEventListener('click', (e) => {

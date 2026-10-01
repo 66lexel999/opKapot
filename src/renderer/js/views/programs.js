@@ -1,4 +1,4 @@
-import { api, esc, h, DAY, MB, debounce, formatBytes, formatDate, relativeTime, sortBy, plural } from '../util.js';
+import { api, esc, h, DAY, MB, debounce, formatBytes, formatDate, relativeTime, sortBy, plural, pathLink } from '../util.js';
 import { DataTable } from '../components/table.js';
 import { openModal, showMenu } from '../components/overlay.js';
 import { appState, programsStore } from '../store.js';
@@ -281,7 +281,7 @@ export class ProgramsView {
       title: p.name,
       width: 640,
       body: `<div class="details-head">${programIcon(p, 44)}<div><div class="details-name">${esc(p.name)}</div><div class="muted">${esc(p.publisher || '')}</div></div></div>
-        <dl class="kv">${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="selectable">${esc(v)}</dd>`).join('')}</dl>`,
+        <dl class="kv">${fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="selectable">${k === 'Location' ? pathLink(v) : esc(v)}</dd>`).join('')}</dl>`,
       buttons: [
         { label: 'Search online', onClick: () => api.programs.searchOnline(p.id) },
         { label: 'Open folder', disabled: !p.installLocation, onClick: () => api.programs.openLocation(p.id) },

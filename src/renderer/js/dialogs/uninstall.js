@@ -1,4 +1,4 @@
-import { api, esc, h, formatBytes, plural, errorMessage } from '../util.js';
+import { api, esc, h, formatBytes, plural, errorMessage, pathLink } from '../util.js';
 import { icon } from '../icons.js';
 import { openModal, toast } from '../components/overlay.js';
 import { appState } from '../store.js';
@@ -235,7 +235,7 @@ class UninstallFlow {
           <label class="lo-row">
             <input type="checkbox" data-id="${esc(i.id)}" ${i.checked ? 'checked' : ''}>
             ${icon(KIND[i.kind]?.[0] || 'file', { size: 20, className: `lo-ico kind-${i.kind}` })}
-            <div class="lo-main"><div class="lo-path trunc selectable" title="${esc(i.path)}">${esc(i.path)}</div>
+            <div class="lo-main"><div class="lo-path trunc selectable" title="${esc(i.path)}">${i.kind === 'registry' ? esc(i.path) : pathLink(i.path)}</div>
               <div class="lo-meta">${esc(KIND[i.kind]?.[1] || i.kind)} · ${esc(i.reason || '')}${i.confidence !== 'high' ? ' · <span class="pill orange">Review</span>' : ''}</div></div>
             <div class="lo-size">${i.size != null ? formatBytes(i.size) : ''}</div>
           </label>`).join('')}`).join('')}

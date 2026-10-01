@@ -59,7 +59,7 @@ export class DataTable {
     this.rowsEl.addEventListener('click', (e) => this.onRowClick(e));
     this.rowsEl.addEventListener('dblclick', (e) => {
       const row = this.rowFromEvent(e);
-      if (row && !e.target.closest('[data-action]')) this.opts.onDblClick?.(row, e);
+      if (row && !e.target.closest('[data-action], [data-open-path]')) this.opts.onDblClick?.(row, e);
     });
     this.rowsEl.addEventListener('contextmenu', (e) => {
       const row = this.rowFromEvent(e);
@@ -165,7 +165,8 @@ export class DataTable {
 
   onRowClick(e) {
     const rowEl = e.target.closest('.dt-row');
-    if (!rowEl) return;
+    // A click on an address opens that folder (handled app-wide), not the row.
+    if (!rowEl || e.target.closest('[data-open-path]')) return;
     const index = Number(rowEl.dataset.i);
     const row = this.rows[index];
     const action = e.target.closest('[data-action]');

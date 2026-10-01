@@ -1,4 +1,4 @@
-import { api, esc, h, errorMessage } from '../util.js';
+import { api, esc, h, errorMessage, pathLink } from '../util.js';
 import { openModal, toast } from '../components/overlay.js';
 import { appState } from '../store.js';
 
@@ -22,19 +22,28 @@ function vtRow() {
     : '<input type="password" class="text-input" data-vt-key placeholder="Paste your key" spellcheck="false" autocomplete="off"><button class="btn btn-sm" data-vt-save>Save</button>'}</div></div>`;
 }
 
+function generalSettings() {
+  return `<div class="settings-section">General</div>
+    <label class="setting"><div><div>Start opKapot when Windows starts</div><div class="muted small">Opens quietly in the notification area when you sign in, so protection starts right away. Choose which other apps start in Security › Startup Manager.</div></div>
+      <input type="checkbox" class="switch" data-autostart ${appState.settings.guardAutostart ? 'checked' : ''}></label>
+    ${toggle('closeToTray', 'Keep running when the window is closed', 'opKapot stays in the notification area. Quit it from the tray icon.')}`;
+}
+
 function securitySettings() {
   return `<div class="settings-section">Security</div>
     ${toggle('guardEnabled', 'Real-time Guard', 'Watches for new incoming connections, startup programs, remote-control tools and camera or microphone use, and alerts you.')}
     ${select('guardIntervalSec', 'Check every', [[15, '15 seconds'], [30, '30 seconds'], [60, '1 minute'], [120, '2 minutes']], 'Shorter catches things sooner but uses a little more CPU.')}
-    ${toggle('closeToTray', 'Keep protecting when the window is closed', 'opKapot stays in the notification area while the Guard is on. Quit it from the tray icon.')}
-    <label class="setting"><div><div>Start protection when Windows starts</div><div class="muted small">Starts opKapot quietly in the tray when you sign in.</div></div>
-      <input type="checkbox" class="switch" data-autostart ${appState.settings.guardAutostart ? 'checked' : ''}></label>
     ${vtRow()}`;
 }
 
-export function openSettings() {
+export async function openSettings() {
+  // Starting with Windows can change outside this dialog (tray, Startup Manager, launch).
+  try {
+    appState.settings = await api.settings.get();
+  } catch { /* keep what we have */ }
   const win = appState.isWindows || appState.info.demo;
   const body = h(`<div class="settings">
+    ${win ? generalSettings() : ''}
     ${win ? securitySettings() : ''}
     <div class="settings-section">Uninstalling</div>
     ${win ? toggle('restorePoint', 'Create a restore point before uninstalling', 'Lets you roll Windows back if something goes wrong.') : ''}
@@ -57,7 +66,7 @@ export function openSettings() {
       const want = e.target.checked;
       e.target.disabled = true;
       try {
-        const res = await api.security.guardAutostart(want);
+        const res = await api.app.autostart(want);
         if (res?.ok === false) throw new Error(res.message || 'Windows refused the change.');
         appState.settings = { ...appState.settings, guardAutostart: want };
       } catch (err) {
@@ -110,7 +119,7 @@ export function openAbout() {
       <img src="assets/icon.png" width="64" height="64" alt="">
       <div><div class="details-name">${esc(name)} ${esc(version)}</div>
       <p>Batch-uninstall programs and Windows apps, wipe leftovers, find large and duplicate files and clean junk. Scan for viruses with Microsoft Defender's engine plus opKapot's own checks, and find out if anyone is spying on or accessing your PC.</p>
-      <p class="muted small">Registry keys are backed up before they are changed or deleted. Backups, quarantine and settings live in:<br><span class="selectable">${esc(paths.userData)}</span></p></div>
+      <p class="muted small">Registry keys are backed up before they are changed or deleted. Backups, quarantine and settings live in:<br><span class="selectable">${pathLink(paths.userData)}</span></p></div>
     </div>`,
     buttons: [{ label: 'Close', kind: 'primary', onClick: (m) => m.close() }],
   });

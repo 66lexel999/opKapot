@@ -1,4 +1,4 @@
-import { api, esc, h, DAY, MB, GB, debounce, formatBytes, formatDate, formatNumber, plural, sortBy, uid, errorMessage, dirname } from '../util.js';
+import { api, esc, h, DAY, MB, GB, debounce, formatBytes, formatDate, formatNumber, plural, sortBy, uid, errorMessage, dirname, pathLink } from '../util.js';
 import { icon } from '../icons.js';
 import { DataTable } from '../components/table.js';
 import { confirmDialog, openModal, showMenu, toast } from '../components/overlay.js';
@@ -76,7 +76,7 @@ export async function deleteFiles(items, { label = '' } = {}) {
   if (result.failed.length) {
     openModal({
       title: `${plural(result.failed.length, 'item')} could not be deleted`,
-      body: `<div class="fail-list">${result.failed.slice(0, 200).map((f) => `<div class="fail-row"><div class="trunc selectable" title="${esc(f.path)}">${esc(f.path)}</div><div class="muted">${esc(f.error)}</div></div>`).join('')}</div>`,
+      body: `<div class="fail-list">${result.failed.slice(0, 200).map((f) => `<div class="fail-row"><div class="trunc selectable" title="${esc(f.path)}">${pathLink(f.path, { file: true })}</div><div class="muted">${esc(f.error)}</div></div>`).join('')}</div>`,
       buttons: [{ label: 'OK', kind: 'primary', onClick: (m) => m.close() }],
     });
   }

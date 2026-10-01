@@ -134,3 +134,51 @@ export function dirname(p) {
   const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
   return i > 0 ? p.slice(0, i) : p;
 }
+
+/**
+ * Every folder along a path, from the drive or root down: "C:\Apps\x" gives
+ * C:\, C:\Apps and C:\Apps\x. Null for anything that isn't a full local path
+ * (network shares, registry keys, plain text).
+ */
+export function pathCrumbs(p) {
+  const text = String(p ?? '').trim();
+  const drive = /^([a-z]:)(?:[\\/]|$)/i.exec(text);
+  if (drive) {
+    const parts = text.slice(drive[0].length).split(/[\\/]+/).filter(Boolean);
+    const root = `${drive[1].toUpperCase()}\\`;
+    const crumbs = [{ label: drive[1].toUpperCase(), path: root }];
+    let acc = root;
+    for (const part of parts) {
+      acc = `${acc}${acc.endsWith('\\') ? '' : '\\'}${part}`;
+      crumbs.push({ label: part, path: acc });
+    }
+    return { crumbs, sep: '\\' };
+  }
+  if (text.startsWith('/') && !text.startsWith('//')) {
+    const crumbs = [{ label: '/', path: '/' }];
+    let acc = '';
+    for (const part of text.split('/').filter(Boolean)) {
+      acc = `${acc}/${part}`;
+      crumbs.push({ label: part, path: acc });
+    }
+    return { crumbs, sep: '/' };
+  }
+  return null;
+}
+
+/**
+ * An address you can click: each part opens that folder (C: opens C:\, Apps
+ * opens C:\Apps). With `file`, the last part shows the file in its folder.
+ * Anything that isn't a local path comes back as plain text.
+ */
+export function pathLink(p, { file = false } = {}) {
+  const parsed = pathCrumbs(p);
+  if (!parsed) return esc(p);
+  const { crumbs, sep } = parsed;
+  return `<span class="path-link">${crumbs.map((c, i) => {
+    const last = i === crumbs.length - 1;
+    const title = last && file ? `Show ${c.path} in its folder` : `Open ${c.path}`;
+    const before = i > 0 && crumbs[i - 1].label !== sep ? `<span class="pl-sep">${esc(sep)}</span>` : '';
+    return `${before}<span class="pl-seg" data-open-path="${esc(c.path)}" title="${esc(title)}">${esc(c.label)}</span>`;
+  }).join('')}</span>`;
+}

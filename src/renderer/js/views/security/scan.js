@@ -1,4 +1,4 @@
-import { api, esc, h, formatBytes, formatNumber, formatDateTime, relativeTime, plural, errorMessage } from '../../util.js';
+import { api, esc, h, formatBytes, formatNumber, formatDateTime, relativeTime, plural, errorMessage, pathLink } from '../../util.js';
 import { icon } from '../../icons.js';
 import { DataTable } from '../../components/table.js';
 import { confirmDialog, openModal, showMenu, toast } from '../../components/overlay.js';
@@ -46,7 +46,7 @@ export class VirusScanView {
       selectable: false,
       emptyHtml: emptyHtml('Choose a scan above.', 'Nothing is removed without asking you.', 'shieldOk'),
       columns: [
-        { key: 'name', label: (t) => `Threat (${t.rows.length})`, render: (r) => `<div class="cell-name"><span class="sev-ico sev-${r.severity}">${icon(r.engine.startsWith('Microsoft') ? 'virus' : 'alert', { size: 24 })}</span><div class="name-text"><div class="name-title trunc" title="${esc(r.name)}">${esc(r.name)}</div><div class="name-sub trunc path-start" title="${esc(r.path)}"><bdi>${esc(r.path || r.type)}</bdi></div></div></div>` },
+        { key: 'name', label: (t) => `Threat (${t.rows.length})`, render: (r) => `<div class="cell-name"><span class="sev-ico sev-${r.severity}">${icon(r.engine.startsWith('Microsoft') ? 'virus' : 'alert', { size: 24 })}</span><div class="name-text"><div class="name-title trunc" title="${esc(r.name)}">${esc(r.name)}</div><div class="name-sub trunc path-start" title="${esc(r.path)}"><bdi>${r.path ? pathLink(r.path, { file: true }) : esc(r.type)}</bdi></div></div></div>` },
         { key: 'severity', label: 'Risk', width: '96px', render: (r) => sevPill(r.severity, { danger: 'High', warning: 'Medium', notice: 'Low' }[r.severity]) },
         { key: 'engine', label: 'Found by', width: '130px', render: (r) => `<span class="trunc" title="${esc(r.engine)}">${r.engine.startsWith('Microsoft') ? 'Defender' : 'opKapot'}</span>` },
         { key: 'status', label: 'Status', width: '132px', render: (r) => `<span class="trunc ${r.active ? 'txt-danger' : 'muted'}">${esc(r.quarantined ? 'Quarantined' : r.ignored ? 'Ignored' : r.status)}</span>` },
@@ -279,7 +279,7 @@ export class VirusScanView {
       ${row.meaning ? `<p class="finding-summary">${esc(row.meaning)}</p>` : ''}
       ${row.hits?.length > 1 || (row.hits?.length && row.engine.startsWith('Microsoft')) ? `<ul class="hit-list">${row.hits.map((x) => `<li><b>${esc(x.title)}</b>${x.why ? ` · ${esc(x.why)}` : ''}</li>`).join('')}</ul>` : ''}
       <dl class="kv">
-        <dt>File</dt><dd class="selectable">${esc(row.path || '—')}</dd>
+        <dt>File</dt><dd class="selectable">${row.path ? pathLink(row.path, { file: true }) : '—'}</dd>
         ${row.size ? `<dt>Size</dt><dd>${formatBytes(row.size)}</dd>` : ''}
         <dt>Status</dt><dd>${esc(row.quarantined ? 'Quarantined' : row.status)}</dd>
         ${row.time ? `<dt>Date</dt><dd>${formatDateTime(row.time)}</dd>` : ''}

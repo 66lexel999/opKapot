@@ -1,4 +1,4 @@
-import { esc, h } from '../util.js';
+import { api, esc, h, errorMessage } from '../util.js';
 import { icon } from '../icons.js';
 
 const root = () => document.getElementById('overlay-root');
@@ -132,6 +132,16 @@ export function toast(message, kind = 'info', timeout = 4200) {
     el.classList.add('out');
     setTimeout(() => el.remove(), 250);
   }, timeout);
+}
+
+/** Open a folder in Explorer (or show a file in its folder), with a note if it's gone. */
+export async function openLocation(p) {
+  try {
+    const problem = await api.files.openLocation(p);
+    if (problem) toast(esc(problem), 'warn', 5000);
+  } catch (err) {
+    toast(esc(errorMessage(err)), 'error', 5000);
+  }
 }
 
 // ---------------------------------------------------------- context menu ---

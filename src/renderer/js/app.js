@@ -3,7 +3,7 @@ import { icon } from './icons.js';
 import { appState, programsStore } from './store.js';
 import { securityStore } from './securityStore.js';
 import { setNavigator } from './router.js';
-import { closeMenu, closeTopModal, hasOpenModal, showMenu, toast } from './components/overlay.js';
+import { closeMenu, closeTopModal, hasOpenModal, openLocation, showMenu, toast } from './components/overlay.js';
 import { ProgramsView } from './views/programs.js';
 import { FilesView } from './views/files.js';
 import { DuplicatesView } from './views/duplicates.js';
@@ -33,7 +33,7 @@ const SECTIONS = [
         ['security/scan', 'Virus Scan', 'virus', () => new VirusScanView()],
         ['security/hackcheck', 'Hack Check', 'hacker', () => new HackCheckView()],
         ['security/network', 'Network Monitor', 'network', () => new NetworkView()],
-        ['security/startup', 'Startup Items', 'rocket', () => new StartupView()],
+        ['security/startup', 'Startup Manager', 'rocket', () => new StartupView()],
         ['security/extensions', 'Browser Extensions', 'puzzle', () => new ExtensionsView()],
         ['security/privacy', 'Camera & Mic', 'camera', () => new PrivacyView()],
         ['security/quarantine', 'Quarantine', 'vault', () => new QuarantineView()],
@@ -366,6 +366,14 @@ async function main() {
   wireKeyboard();
   setNavigator(navigate);
   document.addEventListener('click', (e) => {
+    // Any address in the app: clicking a part of it opens that folder.
+    const place = e.target.closest('[data-open-path]');
+    if (place) {
+      e.preventDefault(); // inside a <label>, don't also tick its checkbox
+      // One window per double-click, and none while selecting text to copy.
+      if (e.detail <= 1 && !String(window.getSelection() || '')) openLocation(place.dataset.openPath);
+      return;
+    }
     const head = e.target.closest('[data-section]');
     if (head) {
       onSectionClick(head.dataset.section);

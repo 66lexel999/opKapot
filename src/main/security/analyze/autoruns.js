@@ -4,6 +4,7 @@ const {
   P, asArray, asObjects, str, commandTarget, commandRedFlags, normalizeWinPath, pathKind, USER_WRITABLE, KIND_LABEL,
   sigState, signerName, describeSig, finding,
 } = require('./common');
+const { TASK_NAME } = require('../../services/autostart');
 
 const SA = 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved';
 
@@ -163,12 +164,15 @@ function buildEntries(raw, env) {
     const command = `"${action.exe}" ${action.args || ''}`.trim();
     const t = commandTarget(command, env);
     const user = String(task.user || '');
+    // opKapot's own "start with Windows" task.
+    const self = task.path === '\\' && task.name === TASK_NAME;
     entries.push({
       id: `task|${task.path}${task.name}`,
       source: 'task',
       sourceLabel: 'Scheduled task',
       where: task.path,
-      name: task.name,
+      name: self ? 'opKapot' : task.name,
+      self,
       command,
       file: t.file,
       host: t.host,
@@ -264,13 +268,20 @@ function buildEntries(raw, env) {
   return entries;
 }
 
-function analyzeAutoruns(raw, { sigs = {}, env = {} } = {}) {
+function analyzeAutoruns(raw, { sigs = {}, env = {}, selfPaths = [] } = {}) {
+  const mine = new Set(selfPaths.filter(Boolean).map((p) => p.toLowerCase()));
   const out = [];
   for (const e of buildEntries(raw, env)) {
     try {
       out.push(rate(e, sigs[e.file], env));
     } catch {
       out.push({ ...e, flags: [], risk: 'ok', signature: 'unknown', publisher: '', signatureText: 'Not checked' });
+    }
+    // Our own task is fine as long as it really starts this copy of opKapot.
+    const last = out[out.length - 1];
+    if (last.self && last.file && mine.has(last.file.toLowerCase())) {
+      last.flags = [];
+      last.risk = 'ok';
     }
   }
   return out;

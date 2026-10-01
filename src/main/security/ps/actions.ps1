@@ -140,15 +140,25 @@ try {
     'guard-autostart' {
       $task = 'opKapot Guard'
       if ($P.enable) {
-        $action = New-ScheduledTaskAction -Execute $P.exe -Argument '--background'
+        $arg = if ($P.args) { [string]$P.args } else { '--background' }
+        $action = New-ScheduledTaskAction -Execute $P.exe -Argument $arg
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
         $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
-        Register-ScheduledTask -TaskName $task -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force -ErrorAction Stop | Out-Null
-        Done 'Protection will start with Windows.'
+        Register-ScheduledTask -TaskName $task -Description 'Starts opKapot in the notification area when you sign in.' -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force -ErrorAction Stop | Out-Null
+        Done 'opKapot will start when Windows starts.'
       } else {
         Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
-        Done 'Protection will no longer start with Windows.'
+        Done 'opKapot will no longer start with Windows.'
       }
+    }
+    'run-add' {
+      $key = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+      if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key -Force | Out-Null }
+      if ($null -ne (Get-RegValue $key ([string]$P.name))) { throw ('There is already a startup entry called "' + $P.name + '".') }
+      New-ItemProperty -LiteralPath $key -Name ([string]$P.name) -Value ([string]$P.command) -PropertyType String -ErrorAction Stop | Out-Null
+      # Clear a "disabled" mark Task Manager may have left under the same name.
+      Remove-ItemProperty -LiteralPath 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run' -Name ([string]$P.name) -ErrorAction SilentlyContinue
+      Done 'Added. It will start the next time you sign in to Windows.'
     }
     # ------------------------------------------------------------ Game Mode ---
     'close-apps' {

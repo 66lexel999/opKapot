@@ -219,7 +219,7 @@ function remote(a, ctx) {
       title: 'Someone signed in to this PC from the internet',
       summary: 'A sign-in came from an internet address, not from your own network.',
       evidence: dedupeLogons(internet).map(fmtLogon),
-      advice: 'Change your Windows password now, turn off Remote Desktop and file sharing, and check Startup Items.',
+      advice: 'Change your Windows password now, turn off Remote Desktop and file sharing, and check Startup Manager.',
     }));
   }
   const lan = [...remoteLogons, ...rdpLogons].filter((l) => classifyIp(l.ip) !== 'public');

@@ -39,13 +39,13 @@ A read-only audit that explains every finding in plain words. Anything it can fi
 ### Network Monitor
 A live table of every connection and open port, showing **which program owns it**, whether it's **incoming** (another device connected to you) or outgoing, and where the other side is. Filter by Internet, Incoming, Listening or Flagged, look up an IP address, **block a program** in Windows Firewall, or end it. The **Blocked** tab lists every program you've blocked, with an **Unblock** button.
 
-### Startup Items, Browser Extensions, Camera & Mic
-- **Startup Items**: everything that starts with Windows, with publisher, signature and risk. Disable, enable or remove items.
+### Startup Manager, Browser Extensions, Camera & Mic
+- **Startup Manager**: everything that starts with Windows, with publisher, signature and risk. Each startup app has an on/off switch, like Task Manager's Startup tab, and you can remove items. **Add program** picks any `.exe`, `.bat` or `.cmd` (with optional arguments) and starts it when you sign in. opKapot itself is listed at the top with its own switch. Scheduled tasks, services and drivers can be switched off too, after a confirmation.
 - **Browser Extensions**: every extension in every browser profile, with what it can do and how it was installed.
 - **Camera & Mic**: which apps used your camera, microphone and location, when, and for how long. A red banner shows anything using them **right now**.
 
 ### Real-time Guard
-While opKapot runs (it can sit in the tray and start with Windows), the Guard checks your PC every 30 seconds and alerts you when:
+While opKapot runs (it starts with Windows and sits in the tray), the Guard checks your PC every 30 seconds and alerts you when:
 - an app starts using your **camera or microphone**;
 - a device on the **internet connects to your PC**, or a program opens a new port;
 - a **remote-control tool** starts, or someone signs in with **Remote Desktop**;
@@ -58,7 +58,7 @@ opKapot is honest about its limits. Microsoft Defender's engine does the signatu
 | | |
 |---|---|
 | ![Hack Check](docs/screenshots/hack-check.png) | ![Virus scan](docs/screenshots/virus-scan.png) |
-| ![Network monitor](docs/screenshots/network-monitor.png) | ![Startup items](docs/screenshots/startup-items.png) |
+| ![Network monitor](docs/screenshots/network-monitor.png) | ![Startup Manager](docs/screenshots/startup-items.png) |
 | ![Browser extensions](docs/screenshots/browser-extensions.png) | ![Camera and mic](docs/screenshots/camera-mic.png) |
 | ![Blocked programs](docs/screenshots/blocked-programs.png) | ![Security Center](docs/screenshots/security-center.png) |
 
@@ -127,6 +127,7 @@ Covers user and Windows temp files, the Windows Update cache, error reports and 
 ### Also
 - **History** of everything removed and how much space it freed.
 - **Settings**: Recycle Bin or permanent delete, restore points, silent mode, automatic leftover removal, system components, scan exclusions and the temp-file age limit.
+- **Clickable addresses.** Every file or folder path in the app works like Explorer's address bar: point at a part of it and click to open that folder. In `C:\Apps\Tools\tool.exe`, clicking `C:` opens `C:\`, clicking `Apps` opens `C:\Apps`, and clicking the file name shows the file selected in its folder (it is never run). Network paths are never opened.
 - Keyboard shortcuts: `F5` refresh, `Ctrl+F` search, `Ctrl+A` select all, `Delete` uninstall or delete the selection, `Esc` close dialogs.
 
 | | |
@@ -153,9 +154,11 @@ Deleting things is serious, so several guards are built in:
 2. Double-click it. Windows SmartScreen may say *"Windows protected your PC"* because the app isn't code-signed: click **More info → Run anyway**.
 3. Click **Yes** when Windows asks for administrator permission. Uninstalling programs, cleaning Windows folders and the security checks need it.
 
-The first launch takes a few seconds while the portable exe unpacks itself. Put the exe somewhere permanent (for example `Documents\opKapot`) before you turn on **Settings → Start protection when Windows starts**, because Windows will launch it from that spot.
+The first launch takes a few seconds while the portable exe unpacks itself. Put the exe somewhere permanent (for example `Documents\opKapot`) before you first run it.
 
-Closing the window while the Real-time Guard is on keeps opKapot running in the notification area. Right-click the tray icon to quit.
+**opKapot starts with Windows.** On its first launch it sets itself to start quietly in the notification area when you sign in. It uses a scheduled task, because Windows won't start administrator programs from the normal startup list. If you move the exe later, run it once from its new place and the task follows. To turn this off, use **Settings → Start opKapot when Windows starts**, the switch at the top of **Startup Manager**, or **Start with Windows** in the tray menu. Once you turn it off, it stays off.
+
+Closing the window keeps opKapot running in the notification area. Right-click the tray icon to quit.
 
 The **Build** GitHub Actions workflow also produces an installer (`opKapot-Uninstaller-Setup-x.y.z.exe`) and a fresh portable exe. Once Actions is enabled for the repository, download them from a workflow run's **Artifacts** section.
 

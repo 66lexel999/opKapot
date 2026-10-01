@@ -1,4 +1,4 @@
-import { api, esc, h, sortBy, formatNumber, errorMessage } from '../../util.js';
+import { api, esc, h, sortBy, formatNumber, errorMessage, pathLink } from '../../util.js';
 import { icon } from '../../icons.js';
 import { DataTable } from '../../components/table.js';
 import { showMenu } from '../../components/overlay.js';
@@ -68,7 +68,7 @@ export class NetworkView {
       selectable: false,
       emptyHtml: loadingHtml('Reading Windows Firewall…'),
       columns: [
-        { key: 'name', label: (t) => `Blocked program (${t.rows.length})`, render: (b) => `<div class="cell-name">${appIcon(b.path, b.name, 28)}<div class="name-text"><div class="name-title trunc">${esc(b.name.replace(/\.exe$/i, ''))}</div><div class="name-sub trunc" title="${esc(b.path)}">${esc(b.path || 'Program file unknown')}</div></div></div>` },
+        { key: 'name', label: (t) => `Blocked program (${t.rows.length})`, render: (b) => `<div class="cell-name">${appIcon(b.path, b.name, 28)}<div class="name-text"><div class="name-title trunc">${esc(b.name.replace(/\.exe$/i, ''))}</div><div class="name-sub trunc path-start" title="${esc(b.path)}"><bdi>${b.path ? pathLink(b.path, { file: true }) : 'Program file unknown'}</bdi></div></div></div>` },
         { key: 'dir', label: 'Blocked', width: '220px', render: (b) => `<span class="trunc">${b.inbound && b.outbound ? 'Internet in and out' : b.outbound ? 'Outgoing connections' : 'Incoming connections'}</span>` },
         { key: 'op', label: 'Action', width: '150px', align: 'center', render: () => '<button class="btn btn-sm btn-accent" data-action="unblock">Unblock</button>' },
       ],

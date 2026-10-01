@@ -80,6 +80,7 @@ const PATHS = {
   power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
   arrowDown: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   swap: '<path d="M7 4L3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
 };
 
 export function icon(name, { size = 20, className = '', title = '' } = {}) {

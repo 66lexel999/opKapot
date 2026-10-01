@@ -1,4 +1,4 @@
-import { api, esc, h, relativeTime, formatDateTime, errorMessage } from '../../util.js';
+import { api, esc, h, relativeTime, formatDateTime, errorMessage, pathLink } from '../../util.js';
 import { icon } from '../../icons.js';
 import { DataTable } from '../../components/table.js';
 import { securityStore } from '../../securityStore.js';
@@ -36,7 +36,7 @@ export class PrivacyView {
       selectable: false,
       emptyHtml: loadingHtml('Reading camera and microphone history…'),
       columns: [
-        { key: 'name', label: (t) => `App (${t.rows.length})`, render: (r) => `<div class="cell-name">${appIcon(r.path, r.name, 28)}<div class="name-text"><div class="name-title trunc">${esc(r.name)}</div><div class="name-sub trunc" title="${esc(r.path || r.packageName)}">${esc(r.path || r.packageName || 'Store app')}</div></div></div>` },
+        { key: 'name', label: (t) => `App (${t.rows.length})`, render: (r) => `<div class="cell-name">${appIcon(r.path, r.name, 28)}<div class="name-text"><div class="name-title trunc">${esc(r.name)}</div><div class="name-sub trunc${r.path ? ' path-start' : ''}" title="${esc(r.path || r.packageName)}">${r.path ? `<bdi>${pathLink(r.path, { file: true })}</bdi>` : esc(r.packageName || 'Store app')}</div></div></div>` },
         { key: 'device', label: 'Used', width: '150px', render: (r) => `<span class="dev">${icon(DEVICE_ICON[r.cap] || 'eye', { size: 16 })}${esc(r.device)}</span>` },
         { key: 'lastStart', label: 'Last used', width: '190px', render: (r) => `<span class="trunc" title="${esc(formatDateTime(r.lastStart))}">${r.inUse ? '<b class="txt-danger">Right now</b>' : esc(relativeTime(r.lastStart))}</span>` },
         { key: 'duration', label: 'For', width: '130px', render: (r) => `<span class="trunc">${esc(span(r.duration))}</span>` },

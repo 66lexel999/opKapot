@@ -17,13 +17,14 @@ const DEFAULT_SETTINGS = {
   skipHidden: false,
   guardEnabled: true,             // real-time Guard: watch for new connections, startup items, camera/mic use
   guardIntervalSec: 30,
-  guardAutostart: false,          // start protection when Windows starts (scheduled task)
-  closeToTray: true,              // keep protecting in the tray when the window is closed
+  guardAutostart: false,          // start opKapot when Windows starts (mirrors the scheduled task)
+  autostartDefaulted: false,      // starting with Windows was turned on once for a new install
+  closeToTray: true,              // keep running in the tray when the window is closed
   virusTotalKeyEnc: '',           // encrypted with Windows DPAPI via Electron safeStorage
 };
 
 // Settings the page may not change directly (they have dedicated handlers).
-const PRIVATE_SETTINGS = new Set(['virusTotalKeyEnc', 'guardAutostart']);
+const PRIVATE_SETTINGS = new Set(['virusTotalKeyEnc', 'guardAutostart', 'autostartDefaulted']);
 
 const HISTORY_LIMIT = 500;
 
